@@ -1,0 +1,19 @@
+# Rust build artifacts
+/target/
+
+# Environment / credentials (never commit these)
+.env
+.env.*
+*.env
+
+# vtui log output
+/logs/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
