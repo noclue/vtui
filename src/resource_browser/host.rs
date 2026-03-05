@@ -1,12 +1,14 @@
+use crate::resource_browser::formatting::{
+    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, status_color,
+};
+use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::{Cell, Row};
-use vim_rs::vim_updatable;
 use vim_rs::types::enums::HostSystemConnectionStateEnum;
-use crate::resource_browser::formatting::{status_color, ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH};
-use crate::resource_type::ResourceType;
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use vim_rs::vim_updatable;
 vim_updatable!(
     struct Host: HostSystem {
         overall_status = "summary.overall_status",
@@ -21,7 +23,6 @@ vim_updatable!(
         datastores = "datastore.length",
     }
 );
-
 
 impl From<&Host> for Row<'_> {
     fn from(host: &Host) -> Self {
@@ -84,7 +85,6 @@ impl From<&Host> for Row<'_> {
     }
 }
 
-
 impl TabularData for Host {
     fn get_title() -> &'static str {
         "Hosts"
@@ -106,16 +106,7 @@ impl TabularData for Host {
 
     fn header_row() -> Vec<&'static str> {
         vec![
-            "ID ",
-            "S ",
-            "C ",
-            "Name ",
-            "Version ",
-            "CPU ",
-            "Memory ",
-            "VMs ",
-            "Net ",
-            "DS ",
+            "ID ", "S ", "C ", "Name ", "Version ", "CPU ", "Memory ", "VMs ", "Net ", "DS ",
         ]
     }
 
@@ -147,7 +138,12 @@ impl TabularData for Host {
         let filter = filter.to_lowercase();
         self.id.value.to_lowercase().contains(&filter)
             || self.name.to_lowercase().contains(&filter)
-            || self.version.as_ref().unwrap_or(&"".to_string()).to_lowercase().contains(&filter)
+            || self
+                .version
+                .as_ref()
+                .unwrap_or(&"".to_string())
+                .to_lowercase()
+                .contains(&filter)
     }
     fn name(&self) -> String {
         self.name.clone()
@@ -155,5 +151,4 @@ impl TabularData for Host {
     fn resource_type() -> ResourceType {
         ResourceType::Host
     }
-
 }

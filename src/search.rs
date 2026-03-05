@@ -1,9 +1,9 @@
+use crate::event::{AppEvent, EventHandler};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::{Color, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-use crate::event::{AppEvent, EventHandler};
 
 /// Represents the state of the search popup
 pub struct SearchState {
@@ -64,9 +64,7 @@ impl SearchState {
                 self.input(c);
                 true
             }
-            _ => {
-                false
-            }
+            _ => false,
         }
     }
 

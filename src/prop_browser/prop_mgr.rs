@@ -1,16 +1,16 @@
-use vim_rs::types::structs::{ManagedObjectReference, ObjectSpec};
-use tui_tree_widget::TreeState;
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::sync::{Arc, RwLock};
-use vim_rs::core::pc_cache::{CacheManager, ReadWriteCacheProxy};
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use crossterm::event::{KeyCode, KeyEvent};
-use std::ops::DerefMut;
-use log::{debug, warn};
 use crate::event::{AppEvent, EventHandler};
 use crate::prop_browser::browser::{PropertyBrowser, PropertyBrowserState};
+use crossterm::event::{KeyCode, KeyEvent};
+use log::{debug, warn};
+use ratatui::Frame;
+use ratatui::layout::Rect;
+use std::cell::RefCell;
+use std::ops::DerefMut;
+use std::rc::Rc;
+use std::sync::{Arc, RwLock};
+use tui_tree_widget::TreeState;
+use vim_rs::core::pc_cache::{CacheManager, ReadWriteCacheProxy};
+use vim_rs::types::structs::{ManagedObjectReference, ObjectSpec};
 
 pub struct PropertyBrowserManager {
     /// Cache manager for managing object caches.
@@ -29,7 +29,9 @@ impl PropertyBrowserManager {
         cache_mgr: Rc<RefCell<CacheManager>>,
         obj: ManagedObjectReference,
     ) -> anyhow::Result<Self> {
-        let browser_state = Arc::new(RwLock::new(PropertyBrowserState::new(obj.clone(), None).await?));
+        let browser_state = Arc::new(RwLock::new(
+            PropertyBrowserState::new(obj.clone(), None).await?,
+        ));
 
         let filter = cache_mgr
             .borrow_mut()
@@ -56,7 +58,9 @@ impl PropertyBrowserManager {
         record: HistoryRecord,
         cache_mgr: Rc<RefCell<CacheManager>>,
     ) -> anyhow::Result<Self> {
-        let browser_state = Arc::new(RwLock::new(PropertyBrowserState::new(record.obj.clone(), Some(record.state)).await?));
+        let browser_state = Arc::new(RwLock::new(
+            PropertyBrowserState::new(record.obj.clone(), Some(record.state)).await?,
+        ));
 
         let filter = cache_mgr
             .borrow_mut()
@@ -104,14 +108,14 @@ impl PropertyBrowserManager {
             .browser_state
             .write()
             .expect("PropertyBrowserState lock poisoned");
-        frame.render_stateful_widget(
-            props,
-            body_area,
-            state.deref_mut(),
-        );
+        frame.render_stateful_widget(props, body_area, state.deref_mut());
     }
 
-    pub async fn handle_key(&mut self, key: &KeyEvent, events: &mut EventHandler) -> anyhow::Result<bool> {
+    pub async fn handle_key(
+        &mut self,
+        key: &KeyEvent,
+        events: &mut EventHandler,
+    ) -> anyhow::Result<bool> {
         match key.code {
             KeyCode::Char('w') | KeyCode::Up => {
                 self.browser_state
@@ -153,7 +157,11 @@ impl PropertyBrowserManager {
         Ok(true)
     }
 
-    pub async fn load(&mut self, obj: ManagedObjectReference, events: &mut EventHandler) -> anyhow::Result<bool> {
+    pub async fn load(
+        &mut self,
+        obj: ManagedObjectReference,
+        events: &mut EventHandler,
+    ) -> anyhow::Result<bool> {
         // Check if the object is already loaded
         if self.obj.value == obj.value {
             return Ok(false);
@@ -164,10 +172,7 @@ impl PropertyBrowserManager {
         Ok(true)
     }
     pub fn get_hints(&self) -> (&'static [&'static str], &'static [&'static str]) {
-        (
-            &[],
-            &["q quit", "r resource", "j dump json", "Enter open"],
-        )
+        (&[], &["q quit", "r resource", "j dump json", "Enter open"])
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
@@ -242,9 +247,16 @@ impl Drop for PropertyBrowserManager {
             #[allow(clippy::await_holding_refcell_ref)]
             tokio::runtime::Handle::current().block_on(async move {
                 debug!("Terminating PropertyBrowserManager. Releasing filter");
-                cache_mgr.borrow_mut().remove_cache(&filter).await.unwrap_or_else(|e| {
-                    warn!("Failed to remove PropertyBrowserManager filter: {:?}, {}", filter, e);
-                });
+                cache_mgr
+                    .borrow_mut()
+                    .remove_cache(&filter)
+                    .await
+                    .unwrap_or_else(|e| {
+                        warn!(
+                            "Failed to remove PropertyBrowserManager filter: {:?}, {}",
+                            filter, e
+                        );
+                    });
             });
         });
     }

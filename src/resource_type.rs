@@ -1,8 +1,8 @@
+use crate::event::{AppEvent, EventHandler};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::prelude::{Color, Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, ListState};
-use crate::event::{AppEvent, EventHandler};
 
 // Add at the top of app.rs
 #[derive(Debug, Clone, Copy)]
@@ -65,18 +65,21 @@ impl ResourceSelectionState {
             height,
         };
 
-        let items: Vec<ratatui::widgets::ListItem> = self.options
+        let items: Vec<ratatui::widgets::ListItem> = self
+            .options
             .iter()
             .map(|option| ratatui::widgets::ListItem::new(option.to_string()))
             .collect();
 
         let list = ratatui::widgets::List::new(items)
-            .block(Block::default()
-                .title("Select Resource Type")
-                .style(Style::default().bg(Color::Blue))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Yellow)))
+            .block(
+                Block::default()
+                    .title("Select Resource Type")
+                    .style(Style::default().bg(Color::Blue))
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Color::Yellow)),
+            )
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
             .highlight_symbol("> ");
 

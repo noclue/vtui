@@ -1,12 +1,12 @@
+use crate::resource_browser::tabular_data::{TableDataSource, TabularData};
+use crate::resource_type::ResourceType;
+use ratatui::layout::Constraint;
+use ratatui::widgets::Row;
 use std::ops::Index;
 use std::sync::{Arc, RwLock};
-use ratatui::layout::Constraint;
 use vim_rs::core::pc_cache::{Cacheable, ObjectCache};
 use vim_rs::core::pc_helpers::BoxableError;
-use crate::resource_browser::tabular_data::{TableDataSource, TabularData};
-use ratatui::widgets::Row;
 use vim_rs::types::structs::ManagedObjectReference;
-use crate::resource_type::ResourceType;
 
 /// The IndexedCache struct is a wrapper around an ObjectCache that provides interface to
 /// filter and sort the data. It implements the TableDataSource trait, allowing it to be used
@@ -22,20 +22,20 @@ pub struct IndexedCache<T>
 where
     T: Cacheable + TabularData,
     T::Error: BoxableError,
-    for<'a> Row<'static>: From<&'a T>
+    for<'a> Row<'static>: From<&'a T>,
 {
     cache: Arc<RwLock<ObjectCache<T>>>,
-    indices: Option<Vec<usize>>,  // Filtered/sorted indices into original cache
-    filter: Option<String>,       // Current filter criteria
-    sort_column: Option<usize>,   // Current sort column
-    sort_descending: bool,        // Sort direction
+    indices: Option<Vec<usize>>, // Filtered/sorted indices into original cache
+    filter: Option<String>,      // Current filter criteria
+    sort_column: Option<usize>,  // Current sort column
+    sort_descending: bool,       // Sort direction
 }
 
 impl<T> IndexedCache<T>
 where
     T: Cacheable + TabularData,
     T::Error: BoxableError,
-    for<'a> Row<'static>: From<&'a T>
+    for<'a> Row<'static>: From<&'a T>,
 {
     pub fn new(cache: Arc<RwLock<ObjectCache<T>>>) -> Self {
         IndexedCache {
@@ -72,12 +72,11 @@ where
     }
 }
 
-
 impl<T> TableDataSource for IndexedCache<T>
 where
     T: Cacheable + TabularData,
     T::Error: BoxableError,
-    for<'a> Row<'static>: From<&'a T>
+    for<'a> Row<'static>: From<&'a T>,
 {
     fn get_title(&self) -> &'static str {
         T::get_title()
@@ -94,9 +93,10 @@ where
     fn set_sort_column(&mut self, column: Option<usize>) {
         // If the column is not sortable, do nothing
         if let Some(sort_column) = column
-            && !T::sortable_columns().contains(&sort_column) {
-                return;
-            }
+            && !T::sortable_columns().contains(&sort_column)
+        {
+            return;
+        }
         if self.sort_column != column {
             self.sort_descending = false;
         } else {
@@ -107,7 +107,8 @@ where
     }
 
     fn get_sort_setting(&self) -> Option<(usize, bool)> {
-        self.sort_column.map(|column| (column, self.sort_descending))
+        self.sort_column
+            .map(|column| (column, self.sort_descending))
     }
     fn set_sort_setting(&mut self, column: usize, descending: bool) {
         if !T::sortable_columns().contains(&column) {
@@ -117,7 +118,7 @@ where
         self.sort_descending = descending;
         self.invalidate();
     }
-    fn iter<'a>(&'a mut self) -> Box<dyn Iterator<Item=Row<'static>> + 'a> {
+    fn iter<'a>(&'a mut self) -> Box<dyn Iterator<Item = Row<'static>> + 'a> {
         self.ensure_indices_updated();
         let Some(indices) = &self.indices else {
             panic!("Internal error: No indices found after ensuring indices updated");

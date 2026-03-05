@@ -1,25 +1,25 @@
 use crate::event::EventHandler;
 use anyhow::{Context, Result};
 use app::App;
+use log::{LevelFilter, info};
+use simplelog::{Config, WriteLogger};
 use std::cell::RefCell;
-use std::rc::Rc;
-use std::{env, sync::Arc};
 use std::fs::File;
 use std::path::Path;
-use log::{info, LevelFilter};
-use simplelog::{Config, WriteLogger};
+use std::rc::Rc;
+use std::{env, sync::Arc};
 use vim_rs::core::client::{Client, ClientBuilder};
 use vim_rs::core::pc_cache::CacheManager;
 
 mod app;
-mod event;
-mod search;
-mod resource_type;
-mod hints;
-mod resource_browser;
-mod prop_browser;
 mod body_pane;
+mod event;
+mod hints;
 mod history;
+mod prop_browser;
+mod resource_browser;
+mod resource_type;
+mod search;
 
 #[allow(clippy::await_holding_refcell_ref)]
 #[tokio::main]
@@ -29,9 +29,9 @@ async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
 
     setup_logging()?;
-    
+
     info!("Starting vtui application!");
-    
+
     let client = match init_vim_client().await {
         Ok(client) => client,
         Err(err) => {
@@ -45,7 +45,8 @@ async fn main() -> Result<()> {
     let event_handler = EventHandler::new(monitor);
     let terminal = ratatui::init();
 
-    let app_result = App::new(event_handler, cache_manager.clone(), client.clone()).await?
+    let app_result = App::new(event_handler, cache_manager.clone(), client.clone())
+        .await?
         .run(terminal)
         .await;
     ratatui::restore();
@@ -57,7 +58,9 @@ async fn init_vim_client() -> Result<Arc<Client>> {
     let vc_server = env::var("VIM_SERVER").with_context(|| "VIM_SERVER env var not set")?;
     let username = env::var("VIM_USERNAME").with_context(|| "VIM_USERNAME env var not set")?;
     let pwd = env::var("VIM_PASSWORD").with_context(|| "VIM_PASSWORD env var not set")?;
-    let insecure = env::var("VIM_INSECURE").map(|insecure| insecure != "false").unwrap_or(false);
+    let insecure = env::var("VIM_INSECURE")
+        .map(|insecure| insecure != "false")
+        .unwrap_or(false);
 
     let client = ClientBuilder::new(vc_server.as_str())
         .insecure(insecure)
@@ -75,9 +78,10 @@ fn print_usage() {
     println!("VIM_USERNAME: The username to connect to the vSphere instance");
     println!("VIM_PASSWORD: The password to connect to the vSphere instance");
     println!("VIM_INSECURE: Flag to allow insecure connections (default: false)");
-    println!("LOG_LEVEL: The log level (trace, debug, info, warn, error off) (default: info). Use 'trace' for wire logging.");
+    println!(
+        "LOG_LEVEL: The log level (trace, debug, info, warn, error off) (default: info). Use 'trace' for wire logging."
+    );
 }
-
 
 fn setup_logging() -> anyhow::Result<()> {
     // Create logs directory if it doesn't exist
@@ -85,12 +89,8 @@ fn setup_logging() -> anyhow::Result<()> {
 
     let log_file_path = Path::new("logs/vtui.log");
 
-
-    WriteLogger::init(
-        log_level(),
-        Config::default(),
-        File::create(log_file_path)?,
-    ).map_err(|e| anyhow::anyhow!("Failed to initialize logger: {}", e))?;
+    WriteLogger::init(log_level(), Config::default(), File::create(log_file_path)?)
+        .map_err(|e| anyhow::anyhow!("Failed to initialize logger: {}", e))?;
 
     info!("Logging system initialized");
     Ok(())

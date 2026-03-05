@@ -1,15 +1,15 @@
-mod vm;
-mod resource_table;
-mod host;
-mod indexed_cache;
-mod tabular_data;
+mod cluster;
+mod data_loaders;
 mod datastore;
 mod formatting;
-mod cluster;
-mod network;
-mod data_loaders;
-mod task;
-mod resource_mgr;
 mod hints;
+mod host;
+mod indexed_cache;
+mod network;
+mod resource_mgr;
+mod resource_table;
+mod tabular_data;
+mod task;
+mod vm;
 
-pub use resource_mgr::{ResourceManager, HistoryRecord};
+pub use resource_mgr::{HistoryRecord, ResourceManager};

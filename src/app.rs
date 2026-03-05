@@ -237,38 +237,38 @@ impl App {
 
     async fn handle_terminal_event(&mut self, event: &CrosstermEvent) -> anyhow::Result<()> {
         if let CrosstermEvent::Key(key) = event
-            && key.kind == KeyEventKind::Press {
-                if matches!(key.code, KeyCode::Char('c') if key.modifiers == crossterm::event::KeyModifiers::CONTROL)
-                {
-                    self.events.send(AppEvent::Quit);
-                    return Ok(());
-                }
-
-                if self.search_state.is_active()
-                    && self.search_state.handle_key(key, &mut self.events)
-                {
-                    return Ok(());
-                }
-
-                if self.resource_selection_state.is_active()
-                    && self
-                        .resource_selection_state
-                        .handle_key(key, &mut self.events)
-                {
-                    return Ok(());
-                }
-
-                if self.body_pane.handle_key(key, &mut self.events).await? {
-                    return Ok(());
-                }
-
-                match key.code {
-                    KeyCode::Char('q') => self.events.send(AppEvent::Quit),
-                    KeyCode::Char('r') => self.events.send(AppEvent::OpenResourceSelection),
-                    KeyCode::Backspace => self.back().await?,
-                    _ => {}
-                }
+            && key.kind == KeyEventKind::Press
+        {
+            if matches!(key.code, KeyCode::Char('c') if key.modifiers == crossterm::event::KeyModifiers::CONTROL)
+            {
+                self.events.send(AppEvent::Quit);
+                return Ok(());
             }
+
+            if self.search_state.is_active() && self.search_state.handle_key(key, &mut self.events)
+            {
+                return Ok(());
+            }
+
+            if self.resource_selection_state.is_active()
+                && self
+                    .resource_selection_state
+                    .handle_key(key, &mut self.events)
+            {
+                return Ok(());
+            }
+
+            if self.body_pane.handle_key(key, &mut self.events).await? {
+                return Ok(());
+            }
+
+            match key.code {
+                KeyCode::Char('q') => self.events.send(AppEvent::Quit),
+                KeyCode::Char('r') => self.events.send(AppEvent::OpenResourceSelection),
+                KeyCode::Backspace => self.back().await?,
+                _ => {}
+            }
+        }
         Ok(())
     }
 

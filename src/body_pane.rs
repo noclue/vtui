@@ -1,9 +1,9 @@
-use crossterm::event::KeyEvent;
-use ratatui::Frame;
-use ratatui::layout::Rect;
 use crate::event::EventHandler;
 use crate::prop_browser::PropertyBrowserManager;
 use crate::resource_browser::ResourceManager;
+use crossterm::event::KeyEvent;
+use ratatui::Frame;
+use ratatui::layout::Rect;
 
 pub(crate) enum BodyPane {
     ResourceBrowser(ResourceManager),
@@ -22,7 +22,11 @@ impl BodyPane {
         }
     }
 
-    pub async fn handle_key(&mut self, key: &KeyEvent, events: &mut EventHandler) -> anyhow::Result<bool> {
+    pub async fn handle_key(
+        &mut self,
+        key: &KeyEvent,
+        events: &mut EventHandler,
+    ) -> anyhow::Result<bool> {
         match self {
             BodyPane::ResourceBrowser(resource_manager) => {
                 resource_manager.handle_key(key, events).await

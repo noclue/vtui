@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
 use crate::prop_browser::HistoryRecord as PropertyEntry;
 use crate::resource_browser::HistoryRecord as ResourceEntry;
+use std::collections::VecDeque;
 
 pub enum History {
     Resource(ResourceEntry),

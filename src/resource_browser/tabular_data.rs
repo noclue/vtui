@@ -1,7 +1,7 @@
-use ratatui::widgets::Row;
-use ratatui::layout::Constraint;
-use vim_rs::types::structs::ManagedObjectReference;
 use crate::resource_type::ResourceType;
+use ratatui::layout::Constraint;
+use ratatui::widgets::Row;
+use vim_rs::types::structs::ManagedObjectReference;
 
 pub type SortFn<T> = Box<dyn FnMut(&T, &T) -> std::cmp::Ordering>;
 
@@ -21,7 +21,9 @@ pub trait TabularData {
     fn sortable_columns() -> Vec<usize>;
 
     // Get sorting function for a specific column
-    fn sort_by_column(column_idx: usize, descending: bool) -> Option<SortFn<Self>> where Self: Sized;
+    fn sort_by_column(column_idx: usize, descending: bool) -> Option<SortFn<Self>>
+    where
+        Self: Sized;
 
     // Whether this item matches the given filter string
     fn matches_filter(&self, filter: &str) -> bool;
@@ -41,7 +43,7 @@ pub trait TableDataSource {
 
     fn get_sort_setting(&self) -> Option<(usize, bool)>;
     fn set_sort_setting(&mut self, column: usize, descending: bool);
-    fn iter<'a>(&'a mut self) -> Box<dyn Iterator<Item=Row<'static>> + 'a>;
+    fn iter<'a>(&'a mut self) -> Box<dyn Iterator<Item = Row<'static>> + 'a>;
     fn is_empty(&mut self) -> bool;
     fn len(&mut self) -> usize;
     fn total_count(&self) -> usize;

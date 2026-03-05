@@ -1,10 +1,10 @@
+use crate::resource_browser::formatting::{STATUS, STATUS_COLUMN_WIDTH, status_color};
+use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::text::Span;
 use ratatui::widgets::{Cell, Row};
 use vim_rs::vim_updatable;
-use crate::resource_browser::formatting::{status_color, STATUS, STATUS_COLUMN_WIDTH};
-use crate::resource_type::ResourceType;
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
 
 vim_updatable!(
     struct NetworkDetails: Network {
@@ -93,5 +93,4 @@ impl TabularData for NetworkDetails {
     fn resource_type() -> ResourceType {
         ResourceType::Network
     }
-
 }

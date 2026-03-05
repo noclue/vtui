@@ -20,26 +20,11 @@ const CLUSTER_EXPAND_HINTS: &[&str] = &[
     EXPAND_VM,
     EXPAND_TASK,
 ];
-const HOST_EXPAND_HINTS: &[&str] = &[
-    EXPAND_NETWORK,
-    EXPAND_DATASTORE,
-    EXPAND_VM,
-    EXPAND_TASK,
-];
-const DATASTORE_EXPAND_HINTS: &[&str] = &[
-    EXPAND_HOST,
-    EXPAND_VM,
-    EXPAND_TASK,
-];
-const NETWORK_EXPAND_HINTS: &[&str] = &[
-    EXPAND_HOST,
-    EXPAND_VM,
-    EXPAND_TASK
-];
+const HOST_EXPAND_HINTS: &[&str] = &[EXPAND_NETWORK, EXPAND_DATASTORE, EXPAND_VM, EXPAND_TASK];
+const DATASTORE_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK];
+const NETWORK_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK];
 
-const VM_EXPAND_HINTS: &[&str] = &[
-    EXPAND_TASK,
-];
+const VM_EXPAND_HINTS: &[&str] = &[EXPAND_TASK];
 pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static str] {
     match resource_type {
         ResourceType::Cluster => CLUSTER_EXPAND_HINTS,

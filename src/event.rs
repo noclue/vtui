@@ -1,12 +1,12 @@
+use crate::prop_browser::HistoryRecord as PropertyHistoryRecord;
+use crate::resource_browser::HistoryRecord as ResourceHistoryRecord;
+use crate::resource_type::ResourceType;
 use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use tokio::sync::mpsc;
 use vim_rs::core::pc_cache::Monitor;
 use vim_rs::types::structs::{ManagedObjectReference, PropertyFilterUpdate};
-use crate::resource_browser::HistoryRecord as ResourceHistoryRecord;
-use crate::prop_browser::HistoryRecord as PropertyHistoryRecord;
-use crate::resource_type::ResourceType;
 
 /// Representation of all possible events.
 #[derive(Debug)]
@@ -40,13 +40,12 @@ pub enum AppEvent {
     /// Resource selection events.
     ResourceSelected(ResourceType),
     OpenResourceSelection,
-    
+
     /// Load object properties.
     LoadProperties(ManagedObjectReference),
 
     ResourceManagerHistory(ResourceHistoryRecord),
     PropertyManagerHistory(PropertyHistoryRecord),
-    
 }
 
 /// Terminal event handler.

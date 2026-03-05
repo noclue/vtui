@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 /// 2. Create white text with the left part of the hint.
 /// 3. Create "color" text with the remainder of the hint.
 /// 4. Join the two parts together in a Line.
-pub(crate) fn decorate_hints<'a>(hints: &'a[&'a str]) -> Vec<Line<'a>> {
+pub(crate) fn decorate_hints<'a>(hints: &'a [&'a str]) -> Vec<Line<'a>> {
     let mut decorated_hints = Vec::new();
     for hint in hints {
         let mut parts = hint.split_whitespace();
@@ -33,4 +33,3 @@ fn padding(i: usize) -> &'static str {
         _ => " ",
     }
 }
-

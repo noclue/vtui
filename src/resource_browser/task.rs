@@ -1,19 +1,19 @@
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
-use ratatui::widgets::{Cell, Row};
-use vim_rs::vim_updatable;
-use vim_rs::types::enums::TaskInfoStateEnum;
+use crate::resource_browser::formatting::ID_COLUMN_WIDTH;
+use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_type::ResourceType;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::{Cell, Row};
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 use vim_rs::core::client::Client;
 use vim_rs::mo::TaskManager;
+use vim_rs::types::enums::TaskInfoStateEnum;
 use vim_rs::types::struct_enum::StructType;
 use vim_rs::types::structs::{TaskReasonAlarm, TaskReasonSchedule, TaskReasonUser};
-use crate::resource_browser::formatting::ID_COLUMN_WIDTH;
-use crate::resource_type::ResourceType;
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use vim_rs::vim_updatable;
 
 vim_updatable!(
     struct TaskInfo: Task {
@@ -41,10 +41,13 @@ impl From<&TaskInfo> for Row<'_> {
     /// - Duration between initiated and completed time or "-" if either is not available
     fn from(task: &TaskInfo) -> Self {
         let description = task_desc(task);
-        let entity = task.entity.clone().map(|x| x.value.clone()).unwrap_or("-".to_string());
+        let entity = task
+            .entity
+            .clone()
+            .map(|x| x.value.clone())
+            .unwrap_or("-".to_string());
         let entity_name = task.entity_name.clone().unwrap_or("-".to_string());
         let initiated = format_datetime(&task.initiated);
-
 
         Row::new(vec![
             Cell::from(task.id.value.clone()),
@@ -54,7 +57,7 @@ impl From<&TaskInfo> for Row<'_> {
             Cell::from(entity_name),
             initiated,
             task_duration_cell(&task.initiated, &task.completed),
-            Cell::from(get_initiator(task))
+            Cell::from(get_initiator(task)),
         ])
     }
 }
@@ -97,10 +100,18 @@ impl TabularData for TaskInfo {
     fn sort_by_column(column_idx: usize, descending: bool) -> Option<SortFn<Self>> {
         let mut f: SortFn<Self> = match column_idx {
             0 => Box::new(|a, b| a.id.value.cmp(&b.id.value)),
-            3 => Box::new(|a, b| a.entity.as_ref().map(|x| &x.value).cmp(&b.entity.as_ref().map(|x| &x.value))),
+            3 => Box::new(|a, b| {
+                a.entity
+                    .as_ref()
+                    .map(|x| &x.value)
+                    .cmp(&b.entity.as_ref().map(|x| &x.value))
+            }),
             4 => Box::new(|a, b| a.entity_name.cmp(&b.entity_name)),
             5 => Box::new(|a, b| a.initiated.cmp(&b.initiated)),
-            6 => Box::new(|a, b| task_duration(&a.initiated, &a.completed).cmp(&task_duration(&b.initiated, &b.completed))),
+            6 => Box::new(|a, b| {
+                task_duration(&a.initiated, &a.completed)
+                    .cmp(&task_duration(&b.initiated, &b.completed))
+            }),
             _ => return None,
         };
         if descending {
@@ -113,8 +124,18 @@ impl TabularData for TaskInfo {
     fn matches_filter(&self, filter: &str) -> bool {
         let filter = filter.to_lowercase();
         self.id.value.to_lowercase().contains(&filter)
-            || self.entity.as_ref().map(|x| x.value.to_lowercase()).unwrap_or("".to_string()).contains(&filter)
-            || self.entity_name.as_ref().unwrap_or(&"".to_string()).to_lowercase().contains(&filter)
+            || self
+                .entity
+                .as_ref()
+                .map(|x| x.value.to_lowercase())
+                .unwrap_or("".to_string())
+                .contains(&filter)
+            || self
+                .entity_name
+                .as_ref()
+                .unwrap_or(&"".to_string())
+                .to_lowercase()
+                .contains(&filter)
             || get_initiator(self).to_lowercase().contains(&filter)
     }
 
@@ -131,15 +152,27 @@ fn get_initiator(task: &TaskInfo) -> String {
     let reason = &task.reason;
     match reason.data_type() {
         StructType::TaskReasonUser => {
-            let user = reason.as_ref().as_any_ref().downcast_ref::<TaskReasonUser>().unwrap();
+            let user = reason
+                .as_ref()
+                .as_any_ref()
+                .downcast_ref::<TaskReasonUser>()
+                .unwrap();
             user.user_name.clone()
         }
         StructType::TaskReasonAlarm => {
-            let alarm = reason.as_ref().as_any_ref().downcast_ref::<TaskReasonAlarm>(). unwrap();
+            let alarm = reason
+                .as_ref()
+                .as_any_ref()
+                .downcast_ref::<TaskReasonAlarm>()
+                .unwrap();
             format!("Alarm[{} {}]", alarm.alarm_name, alarm.entity_name)
         }
         StructType::TaskReasonSchedule => {
-            let schedule = reason.as_ref().as_any_ref().downcast_ref::<TaskReasonSchedule>().unwrap();
+            let schedule = reason
+                .as_ref()
+                .as_any_ref()
+                .downcast_ref::<TaskReasonSchedule>()
+                .unwrap();
             format!("Schedule[{}]", schedule.name)
         }
         StructType::TaskReasonSystem => "<System>".to_string(),
@@ -171,13 +204,14 @@ fn task_duration(initiated: &str, completed: &Option<String>) -> Option<TimeDelt
     let Ok(initiated) = DateTime::parse_from_rfc3339(initiated) else {
         return None;
     };
-    let completed = completed.clone().map(|x| {
-        DateTime::parse_from_rfc3339(&x).ok()
-    }).unwrap_or_else(|| {
-        // Return the now instant if completed is None
-        let now : DateTime<FixedOffset> = chrono::Utc::now().fixed_offset();
-        Some(now)
-    });
+    let completed = completed
+        .clone()
+        .map(|x| DateTime::parse_from_rfc3339(&x).ok())
+        .unwrap_or_else(|| {
+            // Return the now instant if completed is None
+            let now: DateTime<FixedOffset> = chrono::Utc::now().fixed_offset();
+            Some(now)
+        });
     let completed = completed?;
     Some(completed - initiated)
 }
@@ -199,8 +233,6 @@ fn format_timedelta(delta: chrono::TimeDelta) -> String {
     }
 }
 
-
-
 /// Returns a cell with the task status.
 /// queued -              "⟳ Queued "
 /// error -               "✖ Error "
@@ -218,7 +250,10 @@ fn task_status<'b>(state: &TaskInfoStateEnum, progress: Option<i32>) -> Cell<'b>
                 let bar = Line::from(vec![
                     Span::styled("[", Style::default().fg(Color::Gray)),
                     Span::from("█".repeat(progress as usize)),
-                    Span::styled("░".repeat(10 - progress as usize), Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        "░".repeat(10 - progress as usize),
+                        Style::default().fg(Color::Gray),
+                    ),
                     Span::styled("]", Style::default().fg(Color::Gray)),
                 ]);
                 Cell::from(bar)
@@ -233,7 +268,8 @@ fn task_status<'b>(state: &TaskInfoStateEnum, progress: Option<i32>) -> Cell<'b>
 fn labeled_icon<'a>(icon: &'a str, text: &'a str, color: Color) -> Cell<'a> {
     Cell::from(Line::from(vec![
         Span::styled(icon, Style::default().fg(color)),
-        Span::styled(text, Style::default().fg(Color::Gray))]))
+        Span::styled(text, Style::default().fg(Color::Gray)),
+    ]))
 }
 
 fn task_desc(task: &TaskInfo) -> String {
@@ -242,10 +278,11 @@ fn task_desc(task: &TaskInfo) -> String {
         if let Some(ref name) = task.name {
             let name = name.trim_end_matches("_Task");
             if (name == "Destroy" || name == "Remove")
-                && let Some(ref entity) = task.entity {
-                    let s = entity.r#type.as_str();
-                    return format!("{}.{}", name, s)
-                }
+                && let Some(ref entity) = task.entity
+            {
+                let s = entity.r#type.as_str();
+                return format!("{}.{}", name, s);
+            }
             if !name.is_empty() {
                 return name.to_string();
             }
@@ -259,7 +296,7 @@ fn task_desc(task: &TaskInfo) -> String {
 static TASK_DESCRIPTIONS: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 /// Function to ensure task descriptions are initialized. The VIM API uses a predefined set of task
-/// descriptions. To display tasks we need to ensure those descriptions are first cached into a 
+/// descriptions. To display tasks we need to ensure those descriptions are first cached into a
 /// globally accessible maps
 pub async fn ensure_task_descriptions_initialized(client: Arc<Client>) -> anyhow::Result<()> {
     if TASK_DESCRIPTIONS.get().is_some() {
@@ -270,12 +307,13 @@ pub async fn ensure_task_descriptions_initialized(client: Arc<Client>) -> anyhow
         return Ok(());
     };
     // Initialize task descriptions
-    let task_manager = &TaskManager::new(client.clone(),&task_manager.value);
+    let task_manager = &TaskManager::new(client.clone(), &task_manager.value);
 
     let descriptions = task_manager.description().await?;
     // Transform the response into a HashMap
     let methods = descriptions.method_info;
-    let description_map = methods.iter()
+    let description_map = methods
+        .iter()
         .map(|desc| (desc.key.clone(), desc.label.clone()))
         .collect::<HashMap<String, String>>();
 
@@ -286,7 +324,8 @@ pub async fn ensure_task_descriptions_initialized(client: Arc<Client>) -> anyhow
 
 // Function to look up a description
 fn get_task_description(id: &str) -> Option<String> {
-    TASK_DESCRIPTIONS.get()
+    TASK_DESCRIPTIONS
+        .get()
         .map(|map| map.get(id).cloned())
         .unwrap_or(None)
 }

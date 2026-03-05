@@ -26,7 +26,8 @@ pub fn property_to_tree_item(key: String, value: &Value) -> TreeItem<'static, St
     if children.is_empty() {
         TreeItem::new_leaf(key, text)
     } else {
-        TreeItem::new(key, text, children).expect("Failed to create tree item; check for duplicate keys/indices")
+        TreeItem::new(key, text, children)
+            .expect("Failed to create tree item; check for duplicate keys/indices")
     }
 }
 
@@ -56,9 +57,9 @@ fn object_to_span(map: &Object) -> Span<'static> {
     if type_name == "ManagedObjectReference"
         && let (Some(Value::String(motype)), Some(Value::String(value))) =
             (map.get("type"), map.get("value"))
-        {
-            return Span::styled(format!("{}: {}", motype, value), MANAGED_OBJECT);
-        }
+    {
+        return Span::styled(format!("{}: {}", motype, value), MANAGED_OBJECT);
+    }
     Span::styled(format!("{{...}}: {}", type_name), GROUP)
 }
 
@@ -69,9 +70,10 @@ fn value_children(value: &Value) -> Vec<TreeItem<'static, String>> {
             for (key, val) in map.iter() {
                 if key == "_typeName" {
                     if let Value::String(s) = val
-                        && s.as_str() == "ManagedObjectReference" {
-                            return vec![];
-                        }
+                        && s.as_str() == "ManagedObjectReference"
+                    {
+                        return vec![];
+                    }
                     continue;
                 }
                 let text = display_line(key.clone(), val);

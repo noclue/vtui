@@ -1,7 +1,7 @@
-mod json_to_tree;
 mod browser;
-mod prop_utils;
-mod prop_mgr;
 mod hints;
+mod json_to_tree;
+mod prop_mgr;
+mod prop_utils;
 
-pub use prop_mgr::{PropertyBrowserManager, HistoryRecord};
+pub use prop_mgr::{HistoryRecord, PropertyBrowserManager};

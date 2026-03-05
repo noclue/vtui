@@ -113,10 +113,9 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
             state.select(Some(0));
         }
 
-        let mut sb_state =
-            ScrollbarState::new(self.resources.len())
-                .position(state.selected().unwrap_or(0))
-                .viewport_content_length(area.height as usize);
+        let mut sb_state = ScrollbarState::new(self.resources.len())
+            .position(state.selected().unwrap_or(0))
+            .viewport_content_length(area.height as usize);
 
         let rows = self.resources.iter();
 

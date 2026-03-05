@@ -1,16 +1,18 @@
-use std::sync::Arc;
+use crate::resource_browser::formatting;
+use crate::resource_browser::formatting::{
+    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, status_color,
+};
+use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
 use ratatui::widgets::{Cell, Row};
-use vim_rs::vim_updatable;
+use std::sync::Arc;
 use vim_rs::core::client::Client;
 use vim_rs::mo::Datastore;
 use vim_rs::types::structs::ManagedObjectReference;
-use crate::resource_browser::formatting;
-use crate::resource_browser::formatting::{status_color, ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH};
-use crate::resource_type::ResourceType;
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use vim_rs::vim_updatable;
 vim_updatable!(
     struct DatastoreDetails: Datastore {
         overall_status = "overall_status",
@@ -40,7 +42,7 @@ impl From<&DatastoreDetails> for Row<'_> {
 
         let shared = match datastore.shared {
             Some(true) => Cell::from(Span::styled("↔", Style::default().fg(Color::Blue))),
-            _ => Cell::from(Span::styled("⭘", Style::default().fg(Color::Gray)))
+            _ => Cell::from(Span::styled("⭘", Style::default().fg(Color::Gray))),
         };
         let vms = if let Some(vms) = datastore.vms {
             Cell::from(vms.to_string())
@@ -89,16 +91,7 @@ impl TabularData for DatastoreDetails {
 
     fn header_row() -> Vec<&'static str> {
         vec![
-            "ID",
-            "S",
-            "A",
-            "Name",
-            "FS Type",
-            "Shr",
-            "Capacity",
-            "Free",
-            "VMs",
-            "Hosts",
+            "ID", "S", "A", "Name", "FS Type", "Shr", "Capacity", "Free", "VMs", "Hosts",
         ]
     }
 
@@ -137,15 +130,17 @@ impl TabularData for DatastoreDetails {
     fn resource_type() -> ResourceType {
         ResourceType::Datastore
     }
-
 }
 
-pub async fn get_datastore_hosts(client: Arc<Client>, datastore: &ManagedObjectReference) -> anyhow::Result<Vec<ManagedObjectReference>> {
+pub async fn get_datastore_hosts(
+    client: Arc<Client>,
+    datastore: &ManagedObjectReference,
+) -> anyhow::Result<Vec<ManagedObjectReference>> {
     let ds_stor = Datastore::new(client.clone(), &datastore.value.clone());
     let mount_infos = ds_stor.host().await?;
     let Some(mount_infos) = mount_infos else {
         return Ok(Vec::new());
     };
 
-    Ok(mount_infos.iter().map(|info| { info.key.clone() }).collect())
+    Ok(mount_infos.iter().map(|info| info.key.clone()).collect())
 }
