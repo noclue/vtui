@@ -1,13 +1,15 @@
+use crate::resource_browser::formatting;
+use crate::resource_browser::formatting::{
+    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_byte_size,
+};
+use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::Span;
-use vim_rs::vim_updatable;
 use ratatui::widgets::{Cell, Row};
 use vim_rs::types::enums::VirtualMachinePowerStateEnum;
-use crate::resource_browser::formatting;
-use crate::resource_browser::formatting::{format_byte_size, ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH};
-use crate::resource_type::ResourceType;
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use vim_rs::vim_updatable;
 
 vim_updatable!(
     struct VmData: VirtualMachine {
@@ -115,7 +117,12 @@ impl TabularData for VmData {
             0 => Box::new(|a, b| a.id.value.cmp(&b.id.value)),
             3 => Box::new(|a, b| a.name.cmp(&b.name)),
             4 => Box::new(|a, b| a.os.cmp(&b.os)),
-            5 => Box::new(|a, b| a.storage.as_ref().map_or(0, |s| s.committed).cmp(&b.storage.as_ref().map_or(0, |s| s.committed))),
+            5 => Box::new(|a, b| {
+                a.storage
+                    .as_ref()
+                    .map_or(0, |s| s.committed)
+                    .cmp(&b.storage.as_ref().map_or(0, |s| s.committed))
+            }),
             6 => Box::new(|a, b| a.host_cpu.cmp(&b.host_cpu)),
             7 => Box::new(|a, b| a.host_memory.cmp(&b.host_memory)),
             _ => return None,
@@ -132,7 +139,12 @@ impl TabularData for VmData {
         let filter = filter.to_lowercase();
         self.id.value.to_lowercase().contains(&filter)
             || self.name.to_lowercase().contains(&filter)
-            || self.os.as_ref().unwrap_or(&"".to_string()).to_lowercase().contains(&filter)
+            || self
+                .os
+                .as_ref()
+                .unwrap_or(&"".to_string())
+                .to_lowercase()
+                .contains(&filter)
     }
 
     fn name(&self) -> String {
