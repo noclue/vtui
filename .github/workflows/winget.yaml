@@ -1,0 +1,17 @@
+name: Publish to WinGet
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-winget:
+    runs-on: windows-latest
+    steps:
+      - name: Submit to Microsoft Winget
+        uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: noclue.vtui
+          # We MUST use zip because cargo-dist uploads zips, not raw exes
+          installers-regex: '\.zip$' 
+          token: ${{ secrets.WINGET_TOKEN }}
