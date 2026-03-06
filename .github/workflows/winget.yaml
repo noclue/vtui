@@ -1,6 +1,7 @@
 name: Publish to WinGet
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Release"]
     types: [completed]
@@ -8,6 +9,7 @@ on:
 jobs:
   publish-winget:
     runs-on: windows-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Submit to Microsoft Winget
         uses: vedantmgoyal9/winget-releaser@main
