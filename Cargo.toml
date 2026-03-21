@@ -1,13 +1,13 @@
 [package]
 name = "vtui"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
-description = "Terminal UI for browsing VMware vCenter inventory"
+description = "Terminal UI for browsing VMware vSphere inventory"
 license = "Apache-2.0"
 repository = "https://github.com/noclue/vtui"
 homepage = "https://github.com/noclue/vtui"
 readme = "README.md"
-keywords = ["tui", "vmware", "vcenter", "vsphere", "terminal"]
+keywords = ["tui", "vmware", "vsphere", "esxi", "terminal"]
 categories = ["command-line-utilities"]
 exclude = ["logs/", ".env", ".env.*"]
 
@@ -17,7 +17,7 @@ crossterm = {  version = "0.29", features = ["event-stream"]}
 futures = "0.3"
 tokio = {  version = "1.44", features = ["macros"]}
 ratatui = {  version = "0.30" , features = ["crossterm"]}
-vim_rs = "0.4"
+vim_rs = { version = "0.4.1", features = ["xml"]}
 chrono = "0.4"
 tui-tree-widget = "0.24"
 miniserde = "0.1"

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-21
+
+### Added
+
+- Homebrew and winget distribution for published releases
+- `VIM_PROTOCOL` configuration with `auto`, `json`, and `soap` transport modes
+
+### Changed
+
+- Bumped `vim_rs` to `0.4.1` with XML support
+- Added documentation for Homebrew, winget, and command-line installation
+- Added documentation for standalone ESXi connectivity with `VIM_PROTOCOL=auto`
+
 ## [0.2.0] - 2026-03-05
 
 ### Added

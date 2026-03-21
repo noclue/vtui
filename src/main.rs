@@ -8,7 +8,7 @@ use std::fs::File;
 use std::path::Path;
 use std::rc::Rc;
 use std::{env, sync::Arc};
-use vim_rs::core::client::{Client, ClientBuilder};
+use vim_rs::core::client::{Client, ClientBuilder, TransportMode};
 use vim_rs::core::pc_cache::CacheManager;
 
 mod app;
@@ -61,11 +61,19 @@ async fn init_vim_client() -> Result<Arc<Client>> {
     let insecure = env::var("VIM_INSECURE")
         .map(|insecure| insecure != "false")
         .unwrap_or(false);
+    let protocol = env::var("VIM_PROTOCOL").unwrap_or("auto".to_string());
+    let transport = match protocol.as_str() {
+        "auto" => TransportMode::Auto,
+        "json" => TransportMode::Json,
+        "soap" => TransportMode::Soap,
+        _ => return Err(anyhow::anyhow!("Invalid VIM_PROTOCOL: {}", protocol)),
+    };
 
     let client = ClientBuilder::new(vc_server.as_str())
         .insecure(insecure)
         .basic_authn(username.as_str(), pwd.as_str())
         .app_details(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+        .transport(transport)
         .build()
         .await?;
     Ok(client)
@@ -74,13 +82,16 @@ async fn init_vim_client() -> Result<Arc<Client>> {
 fn print_usage() {
     println!("Usage: vtui");
     println!("Make sure to set the following environment variables:");
-    println!("VIM_SERVER: The server address (FQDN or IP) of the vSphere instance");
+    println!("VIM_SERVER: The server address (FQDN or IP) of the vCenter or ESXi host");
     println!("VIM_USERNAME: The username to connect to the vSphere instance");
     println!("VIM_PASSWORD: The password to connect to the vSphere instance");
     println!("VIM_INSECURE: Flag to allow insecure connections (default: false)");
+    println!("VIM_PROTOCOL: The VIM protocol mode to use (auto, json, soap) (default: auto)");
     println!(
         "LOG_LEVEL: The log level (trace, debug, info, warn, error off) (default: info). Use 'trace' for wire logging."
     );
+    println!("");
+    println!("A `.env` file can be used to set the environment variables in the current folder or a parent folder.");
 }
 
 fn setup_logging() -> anyhow::Result<()> {
