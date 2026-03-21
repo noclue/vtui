@@ -91,7 +91,9 @@ fn print_usage() {
         "LOG_LEVEL: The log level (trace, debug, info, warn, error off) (default: info). Use 'trace' for wire logging."
     );
     println!("");
-    println!("A `.env` file can be used to set the environment variables in the current folder or a parent folder.");
+    println!(
+        "A `.env` file can be used to set the environment variables in the current folder or a parent folder."
+    );
 }
 
 fn setup_logging() -> anyhow::Result<()> {
