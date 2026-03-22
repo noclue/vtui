@@ -16,8 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- VM action menu prefetch loads `name` and `disabledMethod` in one `ObjectRetriever::retrieve_objects_from_list` call (`vim_retrievable!`) instead of two separate MO property RPCs.
-- Log file writes now escape ASCII NUL bytes as `\0`, so `LOG_LEVEL=trace` wire dumps (e.g. large SOAP responses) no longer fill `logs/vtui.log` with raw null characters.
+- Tasks now show the description id if a description string is not found.
+- Fixed a critical bug with tasks by moving to vim_Rs 0.4.2. Tasks were not working in the prior release.
+- moved the verison to bottom left of the screen
+- changed dialogs to consistent scheme (bg: DarkGray, border: Yellow, fg: White)
+- revised column widths to better utilize screen estate
 
 ### Notes (roadmap)
 

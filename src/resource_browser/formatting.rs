@@ -3,7 +3,7 @@ use ratatui::widgets::Cell;
 use vim_rs::types::enums::ManagedEntityStatusEnum;
 
 pub(crate) const ID_COLUMN_WIDTH: u16 = 18;
-pub(crate) const STATUS_COLUMN_WIDTH: u16 = 4;
+pub(crate) const STATUS_COLUMN_WIDTH: u16 = 2;
 
 pub(crate) const STATUS: &str = "● ";
 

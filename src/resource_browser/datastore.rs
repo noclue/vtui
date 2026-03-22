@@ -78,10 +78,10 @@ impl TabularData for DatastoreDetails {
         vec![
             Constraint::Length(ID_COLUMN_WIDTH),
             Constraint::Length(STATUS_COLUMN_WIDTH),
-            Constraint::Length(4),
+            Constraint::Length(2),
             Constraint::Fill(1),
             Constraint::Max(15),
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Max(12),
             Constraint::Max(12),
             Constraint::Max(8),
@@ -91,7 +91,7 @@ impl TabularData for DatastoreDetails {
 
     fn header_row() -> Vec<&'static str> {
         vec![
-            "ID", "S", "A", "Name", "FS Type", "Shr", "Capacity", "Free", "VMs", "Hosts",
+            "ID", "S", "A", "Name", "FS Type", "Shrd", "Capacity", "Free", "VMs", "Hosts",
         ]
     }
 

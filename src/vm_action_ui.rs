@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::prelude::{Color, Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap,
 };
@@ -81,7 +81,7 @@ impl VmActionUi {
 
                 let block = Block::default()
                     .title(title)
-                    .style(Style::default().bg(Color::Blue))
+                    .style(Style::default().bg(Color::DarkGray))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Yellow))
@@ -112,10 +112,9 @@ impl VmActionUi {
                 }
             }
             VmActionLayer::Confirm { ctx, action } => {
-                let popup_area = centered_rect(58, 12, frame.area());
+                let popup_area = centered_rect(58, 7, frame.area());
                 let body = format!(
-                    "{}\n\nPath:\n{}\n\nAction: {}\n\nEnter confirm  Esc back",
-                    ctx.name,
+                    "\nPath: {}\n\nAction: {}",
                     ctx.inventory_path,
                     action.label()
                 );
@@ -123,10 +122,18 @@ impl VmActionUi {
                     .block(
                         Block::default()
                             .title("Confirm action")
-                            .style(Style::default().bg(Color::Blue))
+                            .style(Style::default().bg(Color::DarkGray))
                             .borders(Borders::ALL)
                             .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::Red)),
+                            .border_style(Style::default().fg(Color::Yellow))
+                            .title_bottom(Line::from(vec![
+                                Span::styled(
+                                    " < Enter confirm >",
+                                    Style::default().fg(Color::White),
+                                ),
+                                Span::raw("    "),
+                                Span::styled("< Esc back > ", Style::default().fg(Color::White)),
+                            ])),
                     )
                     .wrap(Wrap { trim: true })
                     .alignment(Alignment::Left);

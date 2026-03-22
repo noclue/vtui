@@ -100,14 +100,10 @@ pub async fn prefetch_vm_action_context(
     );
     let retriever = ObjectRetriever::new(client.clone()).map_err(anyhow::Error::from)?;
     let mut rows = retriever
-        .retrieve_objects_from_list::<VmPowerActionProps>(&[vm.clone()])
+        .retrieve_objects_from_list::<VmPowerActionProps>(std::slice::from_ref(&vm))
         .await
         .map_err(anyhow::Error::from)
-        .with_context(|| {
-            format!(
-                "prefetch failed retrieving name/disabledMethod for {label}"
-            )
-        })?;
+        .with_context(|| format!("prefetch failed retrieving name/disabledMethod for {label}"))?;
     let row = rows
         .pop()
         .with_context(|| format!("prefetch: empty retrieve result for {label}"))?;
@@ -131,7 +127,6 @@ pub async fn prefetch_vm_action_context(
     debug!(target: "vm_actions", "prefetch_vm_action_context: complete vm={label}");
     Ok(VmActionContext {
         vm,
-        name,
         disabled_method,
         inventory_path,
     })
@@ -140,7 +135,6 @@ pub async fn prefetch_vm_action_context(
 #[derive(Debug, Clone)]
 pub struct VmActionContext {
     pub vm: ManagedObjectReference,
-    pub name: String,
     pub disabled_method: Option<Vec<String>>,
     pub inventory_path: String,
 }

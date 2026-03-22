@@ -353,8 +353,8 @@ impl<'a> PropertyBrowser<'a> {
     pub fn new() -> Self {
         Self {
             highlight_style: Style::new()
-                .fg(Color::Black)
-                .bg(Color::Blue)
+                .fg(Color::Yellow)
+                .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
             highlight_symbol: "> ",
             with_scrollbar: true,
@@ -471,6 +471,13 @@ impl StatefulWidget for PropertyBrowser<'_> {
                 Block::bordered()
                     .title(title)
                     .title_alignment(Alignment::Center)
+                    .title_bottom(Line::from(vec![
+                        Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            env!("CARGO_PKG_VERSION"),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ]))
                     .title_bottom(
                         Line::styled(
                             "→ - expand, ← - collapse, ↑↓ - scroll",

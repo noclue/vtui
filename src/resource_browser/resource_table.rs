@@ -75,6 +75,13 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
 
         let block = Block::bordered()
             .title(title)
+            .title_bottom(Line::from(vec![
+                Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    env!("CARGO_PKG_VERSION"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]))
             .title_bottom(
                 Line::styled("↑↓ - scroll", hint_style)
                     .alignment(ratatui::layout::Alignment::Right),

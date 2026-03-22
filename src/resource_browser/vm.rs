@@ -85,7 +85,7 @@ impl TabularData for VmData {
         vec![
             Constraint::Length(ID_COLUMN_WIDTH),
             Constraint::Length(STATUS_COLUMN_WIDTH),
-            Constraint::Length(4),
+            Constraint::Length(2),
             Constraint::Fill(1),
             Constraint::Max(15),
             Constraint::Max(12),

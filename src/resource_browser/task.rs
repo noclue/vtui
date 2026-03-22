@@ -273,23 +273,29 @@ fn labeled_icon<'a>(icon: &'a str, text: &'a str, color: Color) -> Cell<'a> {
 }
 
 fn task_desc(task: &TaskInfo) -> String {
-    let Some(description) = get_task_description(&task.description_id) else {
-        // Decode the name
-        if let Some(ref name) = task.name {
-            let name = name.trim_end_matches("_Task");
-            if (name == "Destroy" || name == "Remove")
-                && let Some(ref entity) = task.entity
-            {
-                let s = entity.r#type.as_str();
-                return format!("{}.{}", name, s);
-            }
-            if !name.is_empty() {
-                return name.to_string();
-            }
-        }
+    if let Some(description) = get_task_description(&task.description_id) {
+        return description;
+    }
+
+    if !task.description_id.trim().is_empty() {
         return task.description_id.clone();
-    };
-    description
+    }
+
+    // Decode the name only when there is no usable description ID to show.
+    if let Some(ref name) = task.name {
+        let name = name.trim_end_matches("_Task");
+        if (name == "Destroy" || name == "Remove")
+            && let Some(ref entity) = task.entity
+        {
+            let s = entity.r#type.as_str();
+            return format!("{}.{}", name, s);
+        }
+        if !name.is_empty() {
+            return name.to_string();
+        }
+    }
+
+    "-".to_string()
 }
 
 // Global static for storing task descriptions
@@ -326,6 +332,8 @@ pub async fn ensure_task_descriptions_initialized(client: Arc<Client>) -> anyhow
 fn get_task_description(id: &str) -> Option<String> {
     TASK_DESCRIPTIONS
         .get()
-        .map(|map| map.get(id).cloned())
-        .unwrap_or(None)
+        .and_then(|map| map.get(id))
+        .map(|description| description.trim())
+        .filter(|description| !description.is_empty())
+        .map(str::to_owned)
 }

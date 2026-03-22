@@ -262,7 +262,9 @@ pub async fn resolve_inventory_path(
 
     let contents = retrieve_ancestors_contents(&client, start.clone())
         .await
-        .with_context(|| format!("resolve_inventory_path: retrieve_ancestors_contents failed for {label}"))?;
+        .with_context(|| {
+            format!("resolve_inventory_path: retrieve_ancestors_contents failed for {label}")
+        })?;
 
     let map = build_map(contents).with_context(|| {
         format!("resolve_inventory_path: build_map / parse_object_content failed for {label}")

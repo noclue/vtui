@@ -169,24 +169,18 @@ impl App {
     }
 
     fn build_status_lines(&self) -> Vec<Line<'_>> {
-        let mut res = Vec::<Line>::with_capacity(4);
+        let mut res = Vec::<Line>::with_capacity(3);
 
         // Get about information from the service content
         let about = &self.client.service_content().about;
 
-        // 1. vTUI version
-        res.push(Line::from(vec![
-            "vTUI Version: ".yellow(),
-            env!("CARGO_PKG_VERSION").gray(),
-        ]));
-
-        // 2. vSphere full product name
+        // 1. vSphere full product name
         res.push(Line::from(vec![
             "vSphere: ".yellow(),
             about.full_name.clone().gray(),
         ]));
 
-        // 3. vSphere system UUID
+        // 2. vSphere system UUID
         if let Some(ref uuid) = about.instance_uuid {
             res.push(Line::from(vec![
                 "vSphere UUID: ".yellow(),
@@ -196,7 +190,7 @@ impl App {
             res.push(Line::from(vec!["vSphere UUID: ".yellow(), "N/A".gray()]));
         }
 
-        // 4. Used API version
+        // 3. Used API version
         res.push(Line::from(vec![
             "API Version: ".yellow(),
             self.client.api_release().gray(),

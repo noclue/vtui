@@ -2676,9 +2676,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vim_macros"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de48b5b1d10f3c532b003398f79cac17291156768dd48bc17571da06577f2cf1"
+checksum = "9f9d7b9af859dab4f37050752395e80eadf400d300923ca13ce44d847b0dc9df"
 dependencies = [
  "phf 0.11.3",
  "proc-macro2",
@@ -2689,9 +2689,9 @@ dependencies = [
 
 [[package]]
 name = "vim_rs"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5accea71de51ecba9669d7f24b66dda202cada8ac554dc851dcf4a9fff729df4"
+checksum = "83aa31a2f2859889e35bb3050223bffda9476b1bf9ec1495e5f34881a6fd9539"
 dependencies = [
  "base64",
  "bytes",
@@ -2719,7 +2719,7 @@ dependencies = [
 
 [[package]]
 name = "vtui"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",

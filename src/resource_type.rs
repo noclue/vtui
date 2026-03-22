@@ -75,7 +75,7 @@ impl ResourceSelectionState {
             .block(
                 Block::default()
                     .title("Select Resource Type")
-                    .style(Style::default().bg(Color::Blue))
+                    .style(Style::default().bg(Color::DarkGray))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Yellow)),
