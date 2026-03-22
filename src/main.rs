@@ -16,10 +16,13 @@ mod body_pane;
 mod event;
 mod hints;
 mod history;
+mod inventory_path;
 mod prop_browser;
 mod resource_browser;
 mod resource_type;
 mod search;
+mod vm_action_ui;
+mod vm_power_actions;
 
 #[allow(clippy::await_holding_refcell_ref)]
 #[tokio::main]

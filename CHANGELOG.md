@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- VM power actions from the Virtual Machine resource view: press `x` to open actions (Power On, Shutdown Guest, Hard Power Off, Guest Reboot, Hard Reset, Suspend). Actions are hidden when listed in `VirtualMachine.disabledMethod`.
+- Confirmation dialog for destructive/guest operations, showing VM name and govmomi-style inventory path (batched PropertyCollector ancestry + `parentVApp` handling).
+- Error popup for prefetch or action RPC failures (`Esc` / `Enter` to dismiss).
+- Debug logging for VM action prefetch (`vm_actions`, `inventory_path` log targets) and clearer error context when a prefetch step fails (SOAP/XML vs inventory path).
+
+### Changed
+
+- VM action menu prefetch loads `name` and `disabledMethod` in one `ObjectRetriever::retrieve_objects_from_list` call (`vim_retrievable!`) instead of two separate MO property RPCs.
+- Log file writes now escape ASCII NUL bytes as `\0`, so `LOG_LEVEL=trace` wire dumps (e.g. large SOAP responses) no longer fill `logs/vtui.log` with raw null characters.
+
+### Notes (roadmap)
+
+- **Milestone 2 (planned):** object-scoped **events** view (e.g. `EventManager::query_events` filtered by entity) is not implemented in this release.
+
 ## [0.2.1] - 2026-03-21
 
 ### Added

@@ -44,6 +44,9 @@ pub enum AppEvent {
     /// Load object properties.
     LoadProperties(ManagedObjectReference),
 
+    /// Open VM power-actions flow for the given VM (prefetch path + disabled methods in `App`).
+    OpenVmActions(ManagedObjectReference),
+
     ResourceManagerHistory(ResourceHistoryRecord),
     PropertyManagerHistory(PropertyHistoryRecord),
 }

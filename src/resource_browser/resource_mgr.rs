@@ -223,6 +223,11 @@ impl ResourceManager {
             }
             //KeyCode::Char('c') => self.events.send(AppEvent::ExpandCollection(ResourceType::Cluster)),
             KeyCode::Char('t') => self.expand_collection(ResourceType::Task, events).await?,
+            KeyCode::Char('x') if self.resource_type() == ResourceType::VirtualMachine => {
+                if let Some((vm_ref, _)) = self.selected_item() {
+                    events.send(AppEvent::OpenVmActions(vm_ref));
+                }
+            }
             KeyCode::Char('/') => events.send(AppEvent::OpenSearch),
             KeyCode::Esc => self.set_filter(None),
             KeyCode::Enter => {

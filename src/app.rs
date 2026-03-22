@@ -6,6 +6,8 @@ use crate::prop_browser::PropertyBrowserManager;
 use crate::resource_browser::ResourceManager;
 use crate::resource_type::{ResourceSelectionState, ResourceType};
 use crate::search::SearchState;
+use crate::vm_action_ui::{self, VmActionKeyOutcome, VmActionUi};
+use crate::vm_power_actions::{VmPowerAction, execute_vm_power_action, prefetch_vm_action_context};
 use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEventKind};
 use log::{debug, info, warn};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -36,6 +38,12 @@ pub struct App {
     resource_selection_state: ResourceSelectionState,
     /// History of previous states for back navigation.
     history: HistoryManager,
+    /// VM power action modals (`x` from VM grid).
+    vm_action_ui: VmActionUi,
+    /// Blocking error popup (e.g. prefetch or action failure).
+    error_popup: Option<String>,
+    /// Redraw once after async app work so modals appear without waiting for another event.
+    pending_redraw: bool,
 }
 
 const ASCII_ART: &str = r#"     ╭───────╮
@@ -66,6 +74,9 @@ impl App {
             search_state: SearchState::new(),
             resource_selection_state: ResourceSelectionState::new(),
             history: HistoryManager::new(20), // TODO: Make this configurable
+            vm_action_ui: VmActionUi::default(),
+            error_popup: None,
+            pending_redraw: false,
         })
     }
 
@@ -75,6 +86,10 @@ impl App {
             match self.events.next().await? {
                 Event::Crossterm(event) => self.handle_terminal_event(&event).await?,
                 Event::App(app_event) => self.handle_app_event(app_event).await?,
+            }
+            if self.pending_redraw {
+                terminal.draw(|frame| self.draw(frame))?;
+                self.pending_redraw = false;
             }
         }
         Ok(())
@@ -107,13 +122,13 @@ impl App {
             AppEvent::OpenResourceSelection => self.resource_selection_state.activate(),
             AppEvent::ResourceSelected(resource_type) => {
                 info!("Resource Type Selected. resource_type: {:?}", resource_type);
-                match self.body_pane {
-                    BodyPane::ResourceBrowser(ref mut resource_mgr) => {
+                match &mut self.body_pane {
+                    BodyPane::ResourceBrowser(resource_mgr) => {
                         resource_mgr
                             .load_resource_type(resource_type, &mut self.events)
                             .await?;
                     }
-                    BodyPane::PropertyBrowser(ref mut prop_mgr) => {
+                    BodyPane::PropertyBrowser(prop_mgr) => {
                         prop_mgr.save_state(&mut self.events);
                         let res_mgr = ResourceManager::new(
                             self.client.clone(),
@@ -124,11 +139,18 @@ impl App {
                         self.body_pane = BodyPane::ResourceBrowser(res_mgr);
                     }
                 }
-                if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
-                    resource_mgr
-                        .load_resource_type(resource_type, &mut self.events)
-                        .await?;
+            }
+            AppEvent::OpenVmActions(vm_ref) => {
+                match prefetch_vm_action_context(self.client.clone(), vm_ref).await {
+                    Ok(ctx) => {
+                        let actions = VmPowerAction::visible(&ctx.disabled_method);
+                        self.vm_action_ui.open_menu(ctx, actions);
+                    }
+                    Err(e) => {
+                        self.error_popup = Some(format!("{e:#}"));
+                    }
                 }
+                self.pending_redraw = true;
             }
             AppEvent::LoadProperties(moref) => {
                 info!("LoadProperties. moref: {:?}", moref);
@@ -198,6 +220,12 @@ impl App {
         if self.resource_selection_state.is_active() {
             self.resource_selection_state.render(frame);
         }
+        if self.vm_action_ui.is_active() {
+            self.vm_action_ui.render(frame);
+        }
+        if let Some(ref msg) = self.error_popup {
+            vm_action_ui::render_error_popup(frame, msg);
+        }
     }
 
     fn render_header(&mut self, frame: &mut Frame, top_area: Rect) {
@@ -243,6 +271,33 @@ impl App {
             {
                 self.events.send(AppEvent::Quit);
                 return Ok(());
+            }
+
+            if self.error_popup.is_some() {
+                if vm_action_ui::error_popup_handle_key(key) {
+                    self.error_popup = None;
+                    self.pending_redraw = true;
+                }
+                return Ok(());
+            }
+
+            if self.vm_action_ui.is_active() {
+                match self.vm_action_ui.handle_key(key) {
+                    VmActionKeyOutcome::Ignored => {}
+                    VmActionKeyOutcome::Consumed | VmActionKeyOutcome::Close => {
+                        self.pending_redraw = true;
+                        return Ok(());
+                    }
+                    VmActionKeyOutcome::Execute { vm, action } => {
+                        if let Err(e) =
+                            execute_vm_power_action(self.client.clone(), &vm, action).await
+                        {
+                            self.error_popup = Some(format!("{e:#}"));
+                        }
+                        self.pending_redraw = true;
+                        return Ok(());
+                    }
+                }
             }
 
             if self.search_state.is_active() && self.search_state.handle_key(key, &mut self.events)

@@ -45,6 +45,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releas
 - Full-text search with `/`
 - Sort columns by pressing the column index key (`0`-`9`)
 - Drill into child collections with shortcuts: `v` VMs, `h` Hosts, `n` Networks, `d` Datastores, `t` Tasks
+- **VM power actions** (`x` on the Virtual Machine list): open a menu of power operations gated by the server’s `disabledMethod` list. Inventory path is resolved (govmomi-style) before the menu opens. All actions except **Power On / Start** require a confirmation showing VM name, path, and action. The UI only **starts** each operation (no task-wait or success banner); the live grid reflects state, and `t` still opens tasks for the selected VM. API failures show an error dialog (dismiss with `Esc` or `Enter`).
 - Inspect raw vSphere properties for any object
 - Export object properties to a timestamped JSON file with `j`
 - Navigate backward through browsing history with `Backspace`
@@ -77,6 +78,8 @@ LOG_LEVEL=info
 - `VIM_INSECURE` - Set to `true` to ignore TLS certificate validation
 - `VIM_PROTOCOL` - Transport mode: `auto`, `json`, or `soap` (defaults to `auto`)
 - `LOG_LEVEL` - Optional log level: `trace`, `debug`, `info`, `warn`, `error`, or `off`
+  - With `LOG_LEVEL=debug`, VM action prefetch logs to `logs/vtui.log` under targets **`vm_actions`** (steps: `name()`, `disabled_method()`, `resolve_inventory_path`) and **`inventory_path`** (PropertyCollector retrieve + path build). The error popup also includes `anyhow` context naming the failing step.
+  - At `LOG_LEVEL=trace`, vSphere wire logs can include embedded NUL bytes in SOAP payloads; vTUI writes those as the two-character escape `\0` so the log file stays plain text–friendly.
 
 ## Usage
 

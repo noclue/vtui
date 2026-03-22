@@ -5,7 +5,7 @@ use ratatui::prelude::{Color, Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, ListState};
 
 // Add at the top of app.rs
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceType {
     VirtualMachine,
     Host,
