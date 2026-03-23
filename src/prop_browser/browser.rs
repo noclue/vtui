@@ -477,7 +477,7 @@ impl StatefulWidget for PropertyBrowser<'_> {
                             env!("CARGO_PKG_VERSION"),
                             Style::default().fg(Color::DarkGray),
                         ),
-                    ]))
+                    ]).alignment(Alignment::Left))
                     .title_bottom(
                         Line::styled(
                             "→ - expand, ← - collapse, ↑↓ - scroll",

@@ -95,12 +95,12 @@ impl TabularData for Host {
             Constraint::Length(STATUS_COLUMN_WIDTH),
             Constraint::Length(2),
             Constraint::Fill(1),
-            Constraint::Max(15),
+            Constraint::Max(7),
             Constraint::Max(12),
             Constraint::Max(12),
-            Constraint::Max(8),
-            Constraint::Max(8),
-            Constraint::Max(8),
+            Constraint::Max(5),
+            Constraint::Max(5),
+            Constraint::Max(5),
         ]
     }
 
