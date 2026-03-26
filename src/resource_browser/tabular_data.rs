@@ -53,4 +53,13 @@ pub trait TableDataSource {
     // Get the ID and Name of the object at the given index
     fn item_at_index(&mut self, index: usize) -> Option<(ManagedObjectReference, String)>;
     fn resource_type(&self) -> ResourceType;
+
+    /// Event table only: **removes** the row at `index` and returns a payload for the static
+    /// property browser. Used when leaving the events view; default is a no-op.
+    fn take_event_browser_payload_at(
+        &mut self,
+        _index: usize,
+    ) -> Option<super::events::EventBrowserPayload> {
+        None
+    }
 }

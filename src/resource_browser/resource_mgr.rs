@@ -248,7 +248,12 @@ impl ResourceManager {
             KeyCode::Esc => self.set_filter(None),
             KeyCode::Enter => {
                 if self.resource_type() == ResourceType::Event {
-                    // Phase 2: open event snapshot browser. Phase 1: ignore.
+                    if let Some(sel) = self.table_state.selected()
+                        && let Some(payload) = self.resources.take_event_browser_payload_at(sel)
+                    {
+                        self.save_state(events);
+                        events.send(AppEvent::LoadEventProperties(payload));
+                    }
                 } else if let Some((selected_id, _)) = self.selected_item() {
                     self.save_state(events);
                     events.send(AppEvent::LoadProperties(selected_id));

@@ -1,7 +1,7 @@
 mod cluster;
 mod data_loaders;
 mod datastore;
-mod events;
+pub mod events;
 mod formatting;
 mod hints;
 mod host;
@@ -12,4 +12,5 @@ mod resource_table;
 mod tabular_data;
 mod task;
 mod vm;
+pub use events::{EventBrowserPayload, event_to_browser_object};
 pub use resource_mgr::{HistoryRecord, ResourceManager};

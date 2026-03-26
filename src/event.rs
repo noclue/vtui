@@ -1,4 +1,5 @@
-use crate::prop_browser::HistoryRecord as PropertyHistoryRecord;
+use crate::prop_browser::PropertyHistoryRecord;
+use crate::resource_browser::EventBrowserPayload;
 use crate::resource_browser::HistoryRecord as ResourceHistoryRecord;
 use crate::resource_type::ResourceType;
 use anyhow::{Context, Result};
@@ -43,6 +44,9 @@ pub enum AppEvent {
 
     /// Load object properties.
     LoadProperties(ManagedObjectReference),
+
+    /// Open a static JSON tree for an event (data object, not a managed object).
+    LoadEventProperties(EventBrowserPayload),
 
     /// Open VM power-actions flow for the given VM (prefetch path + disabled methods in `App`).
     OpenVmActions(ManagedObjectReference),

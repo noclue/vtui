@@ -1,5 +1,5 @@
 use crate::event::EventHandler;
-use crate::prop_browser::PropertyBrowserManager;
+use crate::prop_browser::{PropertyBrowserManager, StaticPropertyBrowserManager};
 use crate::resource_browser::ResourceManager;
 use crossterm::event::KeyEvent;
 use ratatui::Frame;
@@ -8,6 +8,7 @@ use ratatui::layout::Rect;
 pub(crate) enum BodyPane {
     ResourceBrowser(ResourceManager),
     PropertyBrowser(PropertyBrowserManager),
+    StaticPropertyBrowser(StaticPropertyBrowserManager),
 }
 
 impl BodyPane {
@@ -18,6 +19,9 @@ impl BodyPane {
             }
             BodyPane::PropertyBrowser(property_browser) => {
                 property_browser.render(frame, body_area);
+            }
+            BodyPane::StaticPropertyBrowser(static_browser) => {
+                static_browser.render(frame, body_area);
             }
         }
     }
@@ -34,12 +38,16 @@ impl BodyPane {
             BodyPane::PropertyBrowser(property_browser) => {
                 property_browser.handle_key(key, events).await
             }
+            BodyPane::StaticPropertyBrowser(static_browser) => {
+                static_browser.handle_key(key, events).await
+            }
         }
     }
     pub fn get_hints(&self) -> (&'static [&'static str], &'static [&'static str]) {
         match self {
             BodyPane::ResourceBrowser(resource_manager) => resource_manager.get_hints(),
             BodyPane::PropertyBrowser(property_browser) => property_browser.get_hints(),
+            BodyPane::StaticPropertyBrowser(static_browser) => static_browser.get_hints(),
         }
     }
 }

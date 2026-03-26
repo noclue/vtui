@@ -13,7 +13,7 @@ pub(crate) const HELP_HINTS_EVENTS: &[&str] = &[
     "/ search",
     "r resource",
     "0..9 sort",
-    "Enter (soon)",
+    "Enter details",
 ];
 
 const EXPAND_NETWORK: &str = "n network";
@@ -44,12 +44,7 @@ const DATASTORE_EXPAND_HINTS: &[&str] = &[
     EXPAND_TASK,
     EXPAND_EVENT,
 ];
-const NETWORK_EXPAND_HINTS: &[&str] = &[
-    EXPAND_HOST,
-    EXPAND_VM,
-    EXPAND_TASK,
-    EXPAND_EVENT,
-];
+const NETWORK_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK];
 
 const VM_EXPAND_HINTS: &[&str] = &[VM_ACTIONS, EXPAND_TASK, EXPAND_EVENT];
 pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static str] {

@@ -1,5 +1,6 @@
 //! Live event table backed by `EventHistoryCollector.latestPage` and PropertyCollector updates.
 
+use crate::prop_browser::BrowserMetadata;
 use crate::resource_browser::formatting::ID_COLUMN_WIDTH;
 use crate::resource_browser::tabular_data::TableDataSource;
 use crate::resource_type::ResourceType;
@@ -26,6 +27,57 @@ use vim_rs::types::structs::{
 use vim_rs::types::vim_any::VimAny;
 
 const EVENT_PAGE_SIZE: i32 = 200;
+
+/// Opens the static event tree in the property browser (phase 2).
+#[derive(Debug)]
+pub struct EventBrowserPayload {
+    pub title: String,
+    pub dump_prefix: String,
+    pub event: Event,
+}
+
+impl EventBrowserPayload {
+    /// Moves `event` out of the row. Used when discarding the events table (no `Clone` on `Event`).
+    pub fn from_row(row: EventRow) -> Self {
+        let meta = event_browser_metadata(&row);
+        let event = row.event;
+        Self {
+            title: meta.title,
+            dump_prefix: meta.dump_prefix,
+            event,
+        }
+    }
+}
+
+pub fn event_browser_metadata(row: &EventRow) -> BrowserMetadata {
+    BrowserMetadata {
+        title: format!("{} : {}", row.event_type, row.event_key),
+        dump_prefix: format!(
+            "{}_{}",
+            sanitize_for_filename(&row.event_type),
+            row.event_key
+        ),
+    }
+}
+
+fn sanitize_for_filename(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | ' ' => '_',
+            c => c,
+        })
+        .collect()
+}
+
+pub fn event_to_browser_object(event: &Event) -> anyhow::Result<miniserde::json::Object> {
+    let s = miniserde::json::to_string(event);
+    let v: miniserde::json::Value = miniserde::json::from_str(&s)
+        .map_err(|e| anyhow::anyhow!("serialize event to JSON: {e}"))?;
+    match v {
+        miniserde::json::Value::Object(o) => Ok(o),
+        _ => Err(anyhow::anyhow!("event did not serialize to a JSON object")),
+    }
+}
 
 /// Synthetic row id — not a server MoRef; never pass to `LoadProperties`.
 fn synthetic_event_row_id(key: i32) -> ManagedObjectReference {
@@ -514,6 +566,18 @@ impl TableDataSource for EventTableDataSource {
 
     fn resource_type(&self) -> ResourceType {
         ResourceType::Event
+    }
+
+    fn take_event_browser_payload_at(&mut self, index: usize) -> Option<EventBrowserPayload> {
+        self.ensure_indices_updated();
+        let data_idx = *self.indices.as_ref()?.get(index)?;
+        self.invalidate();
+        let mut g = self.state.write().ok()?;
+        if data_idx >= g.rows.len() {
+            return None;
+        }
+        let row = g.rows.remove(data_idx);
+        Some(EventBrowserPayload::from_row(row))
     }
 }
 
