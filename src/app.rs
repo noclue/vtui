@@ -5,8 +5,8 @@ use crate::history::{History, HistoryManager};
 use crate::prop_browser::{
     BrowserMetadata, PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager,
 };
-use crate::resource_browser::event_to_browser_object;
 use crate::resource_browser::ResourceManager;
+use crate::resource_browser::event_to_browser_object;
 use crate::resource_type::{ResourceSelectionState, ResourceType};
 use crate::search::SearchState;
 use crate::vm_action_ui::{self, VmActionKeyOutcome, VmActionUi};
@@ -88,7 +88,7 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             match self.events.next().await? {
                 Event::Crossterm(event) => self.handle_terminal_event(&event).await?,
-                Event::App(app_event) => self.handle_app_event(app_event).await?,
+                Event::App(app_event) => self.handle_app_event(*app_event).await?,
             }
             if self.pending_redraw {
                 terminal.draw(|frame| self.draw(frame))?;
@@ -172,6 +172,7 @@ impl App {
                 )
             }
             AppEvent::LoadEventProperties(payload) => {
+                let payload = *payload;
                 info!("LoadEventProperties. title: {}", payload.title);
                 let metadata = BrowserMetadata {
                     title: payload.title,

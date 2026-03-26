@@ -19,7 +19,7 @@ pub enum Event {
     /// Application events.
     ///
     /// Events that are specific to the application.
-    App(AppEvent),
+    App(Box<AppEvent>),
 }
 
 /// Application events.
@@ -46,7 +46,7 @@ pub enum AppEvent {
     LoadProperties(ManagedObjectReference),
 
     /// Open a static JSON tree for an event (data object, not a managed object).
-    LoadEventProperties(EventBrowserPayload),
+    LoadEventProperties(Box<EventBrowserPayload>),
 
     /// Open VM power-actions flow for the given VM (prefetch path + disabled methods in `App`).
     OpenVmActions(ManagedObjectReference),
@@ -105,7 +105,7 @@ impl EventHandler {
     pub fn send(&mut self, app_event: AppEvent) {
         // Ignore the result as the reciever cannot be dropped while this struct still has a
         // reference to it
-        let _ = self.sender.send(Event::App(app_event));
+        let _ = self.sender.send(Event::App(Box::new(app_event)));
     }
 
     /// Shuts down the event handler. Safely closes the receiver and waits for the event thread to
@@ -155,14 +155,14 @@ impl EventTask {
                             continue;
                         }
                         Err(e) => {
-                            self.send(Event::App(
-                                AppEvent::ErrorMessage(
-                                    format!("Error waiting for updates: {}", e)
-                                )
-                            ));
+                            self.send(Event::App(Box::new(AppEvent::ErrorMessage(
+                                format!("Error waiting for updates: {}", e),
+                            ))));
                         }
                         Ok(Some(updates)) => {
-                            self.send(Event::App(AppEvent::PropertyCollector(updates)));
+                            self.send(Event::App(Box::new(AppEvent::PropertyCollector(
+                                updates,
+                            ))));
                         }
                     }
                 }

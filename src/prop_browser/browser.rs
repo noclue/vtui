@@ -6,13 +6,13 @@ use chrono::{Local, SecondsFormat};
 use indexmap::IndexMap;
 use log::{debug, warn};
 use miniserde::json::{Object, Value};
-use std::borrow::Cow;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, ScrollbarOrientation, StatefulWidget};
+use std::borrow::Cow;
 use std::io::Write;
 use std::mem;
 use std::path::PathBuf;
@@ -95,10 +95,7 @@ impl PropertyBrowserState {
     ) -> TreeState<String> {
         self.metadata = metadata;
         self.obj = obj;
-        self.properties = root
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        self.properties = root.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         self.items = self
             .properties
             .iter()
@@ -324,9 +321,7 @@ impl PropertyBrowserState {
     fn generate_json_filename(&self) -> anyhow::Result<String> {
         let name_prefix = self
             .get_object_name()
-            .map(|name| {
-                name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
-            })
+            .map(|name| name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_"))
             .unwrap_or_default();
 
         let type_id_part: Cow<'_, str> = if let Some(ref obj) = self.obj {
@@ -334,7 +329,8 @@ impl PropertyBrowserState {
         } else {
             self.metadata.dump_prefix.as_str().into()
         };
-        let type_id_part = type_id_part.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+        let type_id_part =
+            type_id_part.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
 
         let timestamp = Local::now()
             .to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -379,12 +375,7 @@ impl Cache for PropertyBrowserState {
         if update.is_empty() {
             return Ok(());
         };
-        let self_value = self
-            .obj
-            .as_ref()
-            .expect("checked")
-            .value
-            .clone();
+        let self_value = self.obj.as_ref().expect("checked").value.clone();
         for update in update {
             if update.obj.value == self_value {
                 match update.kind {
@@ -552,13 +543,16 @@ impl StatefulWidget for PropertyBrowser<'_> {
                 Block::bordered()
                     .title(title)
                     .title_alignment(Alignment::Center)
-                    .title_bottom(Line::from(vec![
-                        Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            env!("CARGO_PKG_VERSION"),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ]).alignment(Alignment::Left))
+                    .title_bottom(
+                        Line::from(vec![
+                            Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(
+                                env!("CARGO_PKG_VERSION"),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ])
+                        .alignment(Alignment::Left),
+                    )
                     .title_bottom(
                         Line::styled(
                             "→ - expand, ← - collapse, ↑↓ - scroll",

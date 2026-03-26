@@ -1,8 +1,8 @@
+use super::events;
 use crate::event::{AppEvent, EventHandler};
 use crate::resource_browser::cluster::ClusterDetails;
 use crate::resource_browser::data_loaders;
 use crate::resource_browser::datastore::{DatastoreDetails, get_datastore_hosts};
-use super::events;
 use crate::resource_browser::hints::{HELP_HINTS, HELP_HINTS_EVENTS, get_expand_hint};
 use crate::resource_browser::host::Host;
 use crate::resource_browser::network::NetworkDetails;
@@ -236,9 +236,7 @@ impl ResourceManager {
             }
             //KeyCode::Char('c') => self.events.send(AppEvent::ExpandCollection(ResourceType::Cluster)),
             KeyCode::Char('t') => self.expand_collection(ResourceType::Task, events).await?,
-            KeyCode::Char('e') => {
-                self.expand_collection(ResourceType::Event, events).await?
-            }
+            KeyCode::Char('e') => self.expand_collection(ResourceType::Event, events).await?,
             KeyCode::Char('x') if self.resource_type() == ResourceType::VirtualMachine => {
                 if let Some((vm_ref, _)) = self.selected_item() {
                     events.send(AppEvent::OpenVmActions(vm_ref));
@@ -252,7 +250,7 @@ impl ResourceManager {
                         && let Some(payload) = self.resources.take_event_browser_payload_at(sel)
                     {
                         self.save_state(events);
-                        events.send(AppEvent::LoadEventProperties(payload));
+                        events.send(AppEvent::LoadEventProperties(Box::new(payload)));
                     }
                 } else if let Some((selected_id, _)) = self.selected_item() {
                     self.save_state(events);
@@ -325,7 +323,8 @@ impl ResourceManager {
 
         match res {
             Ok((resources, filter, cleanup)) => {
-                self.apply_new_table_source(resources, filter, cleanup).await?;
+                self.apply_new_table_source(resources, filter, cleanup)
+                    .await?;
                 self.parent = Some((parent_id.clone(), parent_name));
                 Ok(())
             }
@@ -369,11 +368,11 @@ impl ResourceManager {
                 | MoTypesEnum::Datastore
                 | MoTypesEnum::Network
                 | MoTypesEnum::DistributedVirtualPortgroup
-                | MoTypesEnum::OpaqueNetwork => data_loaders::load_from_property::<VmData>(
-                    cache_mgr, parent_id, "vm",
-                )
-                .await
-                .map(|(a, b)| (a, b, ResourceCleanup::None)),
+                | MoTypesEnum::OpaqueNetwork => {
+                    data_loaders::load_from_property::<VmData>(cache_mgr, parent_id, "vm")
+                        .await
+                        .map(|(a, b)| (a, b, ResourceCleanup::None))
+                }
                 MoTypesEnum::ClusterComputeResource => {
                     data_loaders::load_from_container::<VmData>(cache_mgr, parent_id)
                         .await
@@ -392,11 +391,11 @@ impl ResourceManager {
                 MoTypesEnum::ClusterComputeResource
                 | MoTypesEnum::Network
                 | MoTypesEnum::DistributedVirtualPortgroup
-                | MoTypesEnum::OpaqueNetwork => data_loaders::load_from_property::<Host>(
-                    cache_mgr, parent_id, "host",
-                )
-                .await
-                .map(|(a, b)| (a, b, ResourceCleanup::None)),
+                | MoTypesEnum::OpaqueNetwork => {
+                    data_loaders::load_from_property::<Host>(cache_mgr, parent_id, "host")
+                        .await
+                        .map(|(a, b)| (a, b, ResourceCleanup::None))
+                }
                 MoTypesEnum::Datastore => {
                     let hosts = get_datastore_hosts(client.clone(), parent_id).await?;
                     data_loaders::load_from_list::<Host>(cache_mgr, &hosts)
@@ -465,15 +464,13 @@ impl ResourceManager {
                     | MoTypesEnum::Datastore
                     | MoTypesEnum::Network
                     | MoTypesEnum::DistributedVirtualPortgroup
-                    | MoTypesEnum::OpaqueNetwork => {
-                        data_loaders::load_from_property::<TaskInfo>(
-                            cache_mgr,
-                            parent_id,
-                            "recentTask",
-                        )
-                        .await
-                        .map(|(a, b)| (a, b, ResourceCleanup::None))
-                    }
+                    | MoTypesEnum::OpaqueNetwork => data_loaders::load_from_property::<TaskInfo>(
+                        cache_mgr,
+                        parent_id,
+                        "recentTask",
+                    )
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None)),
                     _ => {
                         let r#type = parent_id.r#type.as_str();
                         Err(ResourceError::UnsupportedExpansion {
@@ -509,7 +506,8 @@ impl ResourceManager {
 
         let (resources, filter, cleanup) =
             Self::load_from_container(resource_type, cache_mgr, client).await?;
-        self.apply_new_table_source(resources, filter, cleanup).await
+        self.apply_new_table_source(resources, filter, cleanup)
+            .await
     }
 
     async fn load_from_container(
@@ -523,11 +521,11 @@ impl ResourceManager {
     )> {
         let parent = client.service_content().root_folder.clone();
         match resource_type {
-            ResourceType::VirtualMachine => data_loaders::load_from_container::<VmData>(
-                cache_mgr, &parent,
-            )
-            .await
-            .map(|(a, b)| (a, b, ResourceCleanup::None)),
+            ResourceType::VirtualMachine => {
+                data_loaders::load_from_container::<VmData>(cache_mgr, &parent)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
+            }
             ResourceType::Host => data_loaders::load_from_container::<Host>(cache_mgr, &parent)
                 .await
                 .map(|(a, b)| (a, b, ResourceCleanup::None)),

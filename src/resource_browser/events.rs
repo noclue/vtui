@@ -9,8 +9,8 @@ use chrono::{DateTime, Local};
 use log::warn;
 use ratatui::layout::Constraint;
 use ratatui::widgets::{Cell, Row};
-use std::cmp::Ordering;
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use vim_rs::core::client::Client;
@@ -120,11 +120,7 @@ pub struct DecodedMainObject {
     pub moref: Option<ManagedObjectReference>,
 }
 
-fn entity_arg(
-    type_label: &str,
-    name: &str,
-    moref: &ManagedObjectReference,
-) -> DecodedMainObject {
+fn entity_arg(type_label: &str, name: &str, moref: &ManagedObjectReference) -> DecodedMainObject {
     DecodedMainObject {
         type_label: type_label.to_string(),
         id: moref.value.clone(),
@@ -149,7 +145,10 @@ fn moref_from_json_value(v: &miniserde::json::Value) -> Option<ManagedObjectRefe
         miniserde::json::Value::String(s) => Some(s.clone()),
         _ => None,
     })?;
-    Some(ManagedObjectReference { r#type: t, value: val })
+    Some(ManagedObjectReference {
+        r#type: t,
+        value: val,
+    })
 }
 
 pub fn decode_main_object(event: &Event) -> DecodedMainObject {
@@ -165,20 +164,14 @@ pub fn decode_main_object(event: &Event) -> DecodedMainObject {
         };
     }
     // EventEx
-    if let (
-        Some(miniserde::json::Value::String(ot)),
-        Some(miniserde::json::Value::String(oid)),
-    ) = (
+    if let (Some(miniserde::json::Value::String(ot)), Some(miniserde::json::Value::String(oid))) = (
         event.extra_fields_.get("objectType"),
         event.extra_fields_.get("objectId"),
     ) {
-        let name = event
-            .extra_fields_
-            .get("objectName")
-            .and_then(|v| match v {
-                miniserde::json::Value::String(s) => Some(s.clone()),
-                _ => None,
-            });
+        let name = event.extra_fields_.get("objectName").and_then(|v| match v {
+            miniserde::json::Value::String(s) => Some(s.clone()),
+            _ => None,
+        });
         let moref = Some(ManagedObjectReference {
             r#type: MoTypesEnum::from_str(ot),
             value: oid.clone(),
@@ -444,11 +437,7 @@ impl EventTableDataSource {
                     6 => ra.main_object_id.cmp(&rb.main_object_id),
                     _ => Ordering::Equal,
                 };
-                if descending {
-                    o.reverse()
-                } else {
-                    o
-                }
+                if descending { o.reverse() } else { o }
             };
             indices.sort_by(cmp);
         }
@@ -587,9 +576,7 @@ impl EventTableDataSource {
     }
 }
 
-fn base_event_filter(
-    entity: Option<EventFilterSpecByEntity>,
-) -> EventFilterSpec {
+fn base_event_filter(entity: Option<EventFilterSpecByEntity>) -> EventFilterSpec {
     EventFilterSpec {
         entity,
         time: None,

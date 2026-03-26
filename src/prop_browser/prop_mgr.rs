@@ -40,9 +40,7 @@ pub struct StaticPropertyBrowserManager {
 impl StaticPropertyBrowserManager {
     pub fn new(metadata: BrowserMetadata, root: Object) -> anyhow::Result<Self> {
         let browser_state = Arc::new(RwLock::new(PropertyBrowserState::from_static_json(
-            metadata,
-            root,
-            None,
+            metadata, root, None,
         )?));
         Ok(Self { browser_state })
     }
@@ -81,11 +79,13 @@ impl StaticPropertyBrowserManager {
             .expect("PropertyBrowserState lock poisoned");
         let tree_state = g.replace_tree_state(None);
         let (metadata, root) = g.static_history_snapshot();
-        events.send(AppEvent::PropertyManagerHistory(PropertyHistoryRecord::Static {
-            metadata,
-            root,
-            state: tree_state,
-        }));
+        events.send(AppEvent::PropertyManagerHistory(
+            PropertyHistoryRecord::Static {
+                metadata,
+                root,
+                state: tree_state,
+            },
+        ));
     }
 
     pub fn render(&mut self, frame: &mut Frame, body_area: Rect) {
