@@ -20,7 +20,7 @@ use ratatui::{DefaultTerminal, Frame};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::{Client, Transport, VimClient};
 use vim_rs::core::pc_cache::CacheManager;
 
 /// Main application object.
@@ -215,10 +215,17 @@ impl App {
             res.push(Line::from(vec!["vSphere UUID: ".yellow(), "N/A".gray()]));
         }
 
-        // 3. Used API version
+        // 3. Used API version and wire format (JSON vs SOAP)
+        let wire = match self.client.transport() {
+            Transport::Json => "JSON",
+            Transport::Soap => "SOAP",
+        };
         res.push(Line::from(vec![
             "API Version: ".yellow(),
             self.client.api_release().gray(),
+            " (".gray(),
+            wire.gray(),
+            ")".gray(),
         ]));
 
         res
