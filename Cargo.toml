@@ -27,6 +27,9 @@ indexmap = "2.9"
 thiserror = "2.0.12"
 dotenvy = "0.15"
 
+[dev-dependencies]
+insta = "1"
+
 [profile.release]
 lto = "fat"
 strip = true

@@ -168,3 +168,167 @@ fn object_handle(id: &ManagedObjectReference, name: &String) -> String {
     };
     format!("{}: {}", type_str, name)
 }
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::ResourceTableWidget;
+    use crate::resource_browser::tabular_data::TableDataSource;
+    use crate::resource_type::ResourceType;
+    use insta::assert_snapshot;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Constraint;
+    use ratatui::widgets::{Cell, Row, TableState};
+    use ratatui::Terminal;
+    use vim_rs::types::enums::MoTypesEnum;
+    use vim_rs::types::structs::ManagedObjectReference;
+
+    /// Minimal [`TableDataSource`] for widget snapshots (no vim_rs server).
+    struct MockTableSource {
+        title: &'static str,
+        header: Vec<&'static str>,
+        widths: Vec<Constraint>,
+        rows: Vec<Row<'static>>,
+        filter: Option<String>,
+        sort: Option<(usize, bool)>,
+        resource_type: ResourceType,
+    }
+
+    impl MockTableSource {
+        fn new(title: &'static str, rows: Vec<Row<'static>>) -> Self {
+            Self {
+                title,
+                header: vec!["ID", "Name", "Note"],
+                widths: vec![
+                    Constraint::Min(8),
+                    Constraint::Min(14),
+                    Constraint::Min(10),
+                ],
+                rows,
+                filter: None,
+                sort: None,
+                resource_type: ResourceType::VirtualMachine,
+            }
+        }
+    }
+
+    impl TableDataSource for MockTableSource {
+        fn get_title(&self) -> &'static str {
+            self.title
+        }
+        fn set_filter(&mut self, filter: Option<String>) {
+            self.filter = filter;
+        }
+        fn get_filter(&self) -> Option<String> {
+            self.filter.clone()
+        }
+        fn set_sort_column(&mut self, column: Option<usize>) {
+            if let Some(c) = column {
+                if c < self.header.len() {
+                    self.sort = Some((c, false));
+                }
+            } else {
+                self.sort = None;
+            }
+        }
+        fn get_sort_setting(&self) -> Option<(usize, bool)> {
+            self.sort
+        }
+        fn set_sort_setting(&mut self, column: usize, descending: bool) {
+            self.sort = Some((column, descending));
+        }
+        fn iter<'a>(&'a mut self) -> Box<dyn Iterator<Item = Row<'static>> + 'a> {
+            Box::new(self.rows.clone().into_iter())
+        }
+        fn is_empty(&mut self) -> bool {
+            self.rows.is_empty()
+        }
+        fn len(&mut self) -> usize {
+            self.rows.len()
+        }
+        fn total_count(&self) -> usize {
+            self.rows.len()
+        }
+        fn column_sizes(&self) -> Vec<Constraint> {
+            self.widths.clone()
+        }
+        fn header_row(&self) -> Vec<&'static str> {
+            self.header.clone()
+        }
+        fn invalidate(&mut self) {}
+        fn item_at_index(&mut self, index: usize) -> Option<(ManagedObjectReference, String)> {
+            let id = ManagedObjectReference {
+                r#type: MoTypesEnum::VirtualMachine,
+                value: format!("vm-{index}"),
+            };
+            Some((id, format!("row-{index}")))
+        }
+        fn resource_type(&self) -> ResourceType {
+            self.resource_type
+        }
+    }
+
+    fn row_three_cells(a: &str, b: &str, c: &str) -> Row<'static> {
+        Row::new(vec![
+            Cell::from(a.to_string()),
+            Cell::from(b.to_string()),
+            Cell::from(c.to_string()),
+        ])
+    }
+
+    fn draw_table(
+        mock: &mut MockTableSource,
+        parent: &Option<(ManagedObjectReference, String)>,
+        table_state: &mut TableState,
+        width: u16,
+        height: u16,
+    ) -> String {
+        let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+        term.draw(|f| {
+            let w = ResourceTableWidget::new(mock, parent);
+            f.render_stateful_widget(w, f.area(), table_state);
+        })
+        .unwrap();
+        format!("{}", term.backend())
+    }
+
+    #[test]
+    fn resource_table_empty_snapshot() {
+        let mut mock = MockTableSource::new("Mock VMs", vec![]);
+        let parent = None;
+        let mut state = TableState::default();
+        assert_snapshot!(draw_table(&mut mock, &parent, &mut state, 72, 14));
+    }
+
+    #[test]
+    fn resource_table_two_rows_snapshot() {
+        let mut mock = MockTableSource::new(
+            "Mock VMs",
+            vec![
+                row_three_cells("vm-1", "alpha", "ok"),
+                row_three_cells("vm-2", "beta", "ok"),
+            ],
+        );
+        let parent = None;
+        let mut state = TableState::default();
+        assert_snapshot!(draw_table(&mut mock, &parent, &mut state, 72, 16));
+    }
+
+    #[test]
+    fn resource_table_with_filter_and_parent_snapshot() {
+        let mut mock = MockTableSource::new(
+            "Mock VMs",
+            vec![row_three_cells("vm-9", "gamma", "ok")],
+        );
+        mock.set_filter(Some("gamma".into()));
+        mock.set_sort_setting(1, false);
+        let parent = Some((
+            ManagedObjectReference {
+                r#type: MoTypesEnum::ClusterComputeResource,
+                value: "domain-c7".into(),
+            },
+            "lab-cluster".into(),
+        ));
+        let mut state = TableState::default();
+        assert_snapshot!(draw_table(&mut mock, &parent, &mut state, 80, 16));
+    }
+}

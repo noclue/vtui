@@ -130,3 +130,85 @@ fn get_key_value(val: &Value) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use miniserde::json;
+    use std::collections::HashSet;
+
+    #[test]
+    fn leaf_string_has_no_children() {
+        let val = Value::String("hello".into());
+        let item = property_to_tree_item("greeting".into(), &val);
+        assert!(item.children().is_empty());
+        assert_eq!(item.identifier(), "greeting");
+    }
+
+    #[test]
+    fn leaf_bool_number_null() {
+        let b = property_to_tree_item("b".into(), &Value::Bool(true));
+        assert!(b.children().is_empty());
+        let n = property_to_tree_item("n".into(), &Value::Number(Number::U64(7)));
+        assert!(n.children().is_empty());
+        let nl = property_to_tree_item("z".into(), &Value::Null);
+        assert!(nl.children().is_empty());
+    }
+
+    #[test]
+    fn nested_object_skips_typename_and_keeps_fields() {
+        let json_str = r#"{"_typeName":"VirtualDevice","key":200,"label":"NIC"}"#;
+        let val: Value = json::from_str(json_str).unwrap();
+        let item = property_to_tree_item("device".into(), &val);
+        let ids: HashSet<_> = item
+            .children()
+            .iter()
+            .map(|c| c.identifier().clone())
+            .collect();
+        assert_eq!(
+            ids,
+            HashSet::from_iter(["key".to_string(), "label".to_string()])
+        );
+    }
+
+    #[test]
+    fn managed_object_reference_is_leaf() {
+        let json_str = r#"{"_typeName":"ManagedObjectReference","type":"VirtualMachine","value":"vm-42"}"#;
+        let val: Value = json::from_str(json_str).unwrap();
+        let item = property_to_tree_item("vm".into(), &val);
+        assert!(item.children().is_empty());
+    }
+
+    #[test]
+    fn array_uses_key_field_for_child_labels_when_present() {
+        let json_str = r#"[{"key":"first","v":1},{"key":"second","v":2}]"#;
+        let val: Value = json::from_str(json_str).unwrap();
+        let item = property_to_tree_item("arr".into(), &val);
+        assert_eq!(item.children().len(), 2);
+        assert_eq!(item.child(0).unwrap().identifier(), "0");
+        assert_eq!(item.child(1).unwrap().identifier(), "1");
+    }
+
+    #[test]
+    fn empty_object_is_leaf() {
+        let val: Value = json::from_str("{}").unwrap();
+        let item = property_to_tree_item("empty".into(), &val);
+        assert!(item.children().is_empty());
+    }
+
+    #[test]
+    fn get_type_name_reads_typename_field() {
+        let mut m = Object::new();
+        m.insert("_typeName".into(), Value::String("VirtualMachine".into()));
+        assert_eq!(
+            get_type_name(&m).as_deref(),
+            Some("VirtualMachine")
+        );
+    }
+
+    #[test]
+    fn get_type_name_missing() {
+        let m = Object::new();
+        assert!(get_type_name(&m).is_none());
+    }
+}

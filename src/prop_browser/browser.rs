@@ -576,3 +576,69 @@ impl StatefulWidget for PropertyBrowser<'_> {
         widget.render(area, buf, &mut state.state);
     }
 }
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::{BrowserMetadata, PropertyBrowser, PropertyBrowserState};
+    use insta::assert_snapshot;
+    use miniserde::json::{Object, Value};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use tui_tree_widget::TreeState;
+
+    fn sample_root_object() -> Object {
+        match miniserde::json::from_str::<Value>(
+            r#"{"name":"demo-vm","config":{"numCpu":4,"memoryMB":8192}}"#,
+        )
+        .expect("fixture JSON")
+        {
+            Value::Object(o) => o,
+            _ => panic!("fixture must be a JSON object"),
+        }
+    }
+
+    fn sample_metadata() -> BrowserMetadata {
+        BrowserMetadata {
+            title: "VmPoweredOnEvent : 42".into(),
+            dump_prefix: "VmPoweredOnEvent_42".into(),
+        }
+    }
+
+    fn draw_property_browser(
+        metadata: BrowserMetadata,
+        root: Object,
+        tree_state: Option<TreeState<String>>,
+    ) -> String {
+        let mut state =
+            PropertyBrowserState::from_static_json(metadata, root, tree_state).expect("state");
+        let mut term = Terminal::new(TestBackend::new(78, 20)).unwrap();
+        term
+            .draw(|f| {
+                let w = PropertyBrowser::new();
+                f.render_stateful_widget(w, f.area(), &mut state);
+            })
+            .unwrap();
+        format!("{}", term.backend())
+    }
+
+    #[test]
+    fn property_browser_static_default_selection_snapshot() {
+        assert_snapshot!(draw_property_browser(
+            sample_metadata(),
+            sample_root_object(),
+            None,
+        ));
+    }
+
+    #[test]
+    fn property_browser_static_expanded_config_snapshot() {
+        let mut ts = TreeState::default();
+        let _ = ts.select(vec!["config".to_string()]);
+        let _ = ts.open(vec!["config".to_string()]);
+        assert_snapshot!(draw_property_browser(
+            sample_metadata(),
+            sample_root_object(),
+            Some(ts),
+        ));
+    }
+}
