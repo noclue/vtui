@@ -6,6 +6,7 @@ use crate::resource_browser::datastore::{DatastoreDetails, get_datastore_hosts};
 use crate::resource_browser::hints::{HELP_HINTS, HELP_HINTS_EVENTS, get_expand_hint};
 use crate::resource_browser::host::Host;
 use crate::resource_browser::network::NetworkDetails;
+use crate::resource_browser::perf::{PerfPollerState, PerfSnapshotShare, new_perf_snapshot_share};
 use crate::resource_browser::resource_table::ResourceTableWidget;
 use crate::resource_browser::tabular_data::TableDataSource;
 use crate::resource_browser::task::{TaskInfo, ensure_task_descriptions_initialized};
@@ -50,6 +51,11 @@ pub struct ResourceManager {
     pending_table_state: Option<(usize, Option<usize>)>, // (offset, selected_index)
     /// Session objects that must be destroyed when leaving this table source.
     source_cleanup: ResourceCleanup,
+    /// Live CPU/mem % samples for VM/Host sparklines (visible rows).
+    perf_snapshot: PerfSnapshotShare,
+    perf_poller: Option<PerfPollerState>,
+    /// Inner height of the table block last render (`body_area.height - 2`); used for visible-row perf queries.
+    last_table_inner_height: u16,
 }
 
 #[derive(Debug)]
@@ -95,7 +101,8 @@ impl ResourceManager {
         let (resources, filter, source_cleanup) =
             Self::load_from_container(resource_type, cache_mgr.clone(), &client).await?;
 
-        Ok(Self {
+        let perf_snapshot = new_perf_snapshot_share();
+        let mut mgr = Self {
             cache_mgr,
             client,
             resources,
@@ -104,7 +111,12 @@ impl ResourceManager {
             parent: None,
             pending_table_state: None,
             source_cleanup,
-        })
+            perf_snapshot,
+            perf_poller: None,
+            last_table_inner_height: 0,
+        };
+        mgr.refresh_perf_visible().await;
+        Ok(mgr)
     }
 
     pub async fn from_history_record(
@@ -139,7 +151,8 @@ impl ResourceManager {
         // Make sure the data reflects our settings
         resources.invalidate();
 
-        Ok(Self {
+        let perf_snapshot = new_perf_snapshot_share();
+        let mut mgr = Self {
             cache_mgr,
             client,
             resources,
@@ -148,7 +161,12 @@ impl ResourceManager {
             parent: record.parent,
             pending_table_state: Some((record.offset, record.selected_index)),
             source_cleanup,
-        })
+            perf_snapshot,
+            perf_poller: None,
+            last_table_inner_height: 0,
+        };
+        mgr.refresh_perf_visible().await;
+        Ok(mgr)
     }
 
     pub async fn load_history_record(
@@ -175,6 +193,7 @@ impl ResourceManager {
         }
         self.resources.invalidate();
 
+        self.refresh_perf_visible().await;
         Ok(())
     }
     pub fn save_state(&mut self, events: &mut EventHandler) {
@@ -200,8 +219,70 @@ impl ResourceManager {
     }
 
     pub fn render(&mut self, frame: &mut Frame, body_area: Rect) {
+        self.last_table_inner_height = body_area.height.saturating_sub(2);
+        if matches!(
+            self.resource_type(),
+            ResourceType::VirtualMachine | ResourceType::Host
+        ) {
+            self.resources
+                .set_perf_snapshot(Some(self.perf_snapshot.clone()));
+        } else {
+            self.resources.set_perf_snapshot(None);
+        }
         let table = ResourceTableWidget::new(self.resources.as_mut(), &self.parent);
         frame.render_stateful_widget(table, body_area, &mut self.table_state);
+    }
+
+    /// Refresh performance samples for currently visible VM/Host rows (best-effort).
+    pub async fn refresh_perf_visible(&mut self) {
+        if !matches!(
+            self.resource_type(),
+            ResourceType::VirtualMachine | ResourceType::Host
+        ) {
+            return;
+        }
+        let refs = self.visible_managed_object_refs();
+        if refs.is_empty() {
+            return;
+        }
+        if self.perf_poller.is_none() {
+            match PerfPollerState::new(self.client.clone()) {
+                Ok(p) => self.perf_poller = Some(p),
+                Err(e) => {
+                    warn!("PerformanceManager init failed: {}", e);
+                    return;
+                }
+            }
+        }
+        let Some(poller) = self.perf_poller.as_mut() else {
+            return;
+        };
+        if let Err(e) = poller.poll_entities(&refs, &self.perf_snapshot).await {
+            warn!("perf query failed: {}", e);
+        }
+    }
+
+    fn visible_managed_object_refs(&mut self) -> Vec<ManagedObjectReference> {
+        let n = self.resources.len();
+        if n == 0 {
+            return vec![];
+        }
+        let visible_rows = if self.last_table_inner_height > 2 {
+            (self.last_table_inner_height as usize)
+                .saturating_sub(1)
+                .max(1)
+        } else {
+            n.min(64)
+        };
+        let offset = self.table_state.offset().min(n.saturating_sub(1));
+        let end = (offset + visible_rows).min(n);
+        let mut out = Vec::new();
+        for i in offset..end {
+            if let Some((m, _)) = self.resources.item_at_index(i) {
+                out.push(m);
+            }
+        }
+        out
     }
 
     pub async fn handle_key(
@@ -261,6 +342,7 @@ impl ResourceManager {
                 return Ok(false);
             }
         }
+        self.refresh_perf_visible().await;
         Ok(true)
     }
     pub(crate) async fn load_resource_type(
@@ -581,6 +663,14 @@ impl ResourceManager {
         self.table_state = TableState::default();
         self.resources = resources;
         self.filter = filter;
+        if !matches!(
+            self.resources.resource_type(),
+            ResourceType::VirtualMachine | ResourceType::Host
+        ) && let Ok(mut g) = self.perf_snapshot.write()
+        {
+            g.clear();
+        }
+        self.refresh_perf_visible().await;
         Ok(())
     }
 }

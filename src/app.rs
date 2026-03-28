@@ -72,7 +72,7 @@ impl App {
             should_quit: false,
             cache_mgr,
             client,
-            body_pane: BodyPane::ResourceBrowser(resource_mgr),
+            body_pane: BodyPane::ResourceBrowser(Box::new(resource_mgr)),
             events,
             search_state: SearchState::new(),
             resource_selection_state: ResourceSelectionState::new(),
@@ -120,7 +120,9 @@ impl App {
                 debug!("SearchCompleted. filter: {:?}", filter);
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.set_filter(Some(filter));
+                    resource_mgr.refresh_perf_visible().await;
                 }
+                self.pending_redraw = true;
             }
             AppEvent::OpenResourceSelection => self.resource_selection_state.activate(),
             AppEvent::ResourceSelected(resource_type) => {
@@ -139,7 +141,7 @@ impl App {
                             resource_type,
                         )
                         .await?;
-                        self.body_pane = BodyPane::ResourceBrowser(res_mgr);
+                        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
                     }
                     BodyPane::StaticPropertyBrowser(static_mgr) => {
                         static_mgr.save_state(&mut self.events);
@@ -149,7 +151,7 @@ impl App {
                             resource_type,
                         )
                         .await?;
-                        self.body_pane = BodyPane::ResourceBrowser(res_mgr);
+                        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
                     }
                 }
             }
@@ -188,6 +190,12 @@ impl App {
             }
             AppEvent::PropertyManagerHistory(history) => {
                 self.history.add_property_entry(history);
+            }
+            AppEvent::PerfTick => {
+                if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
+                    resource_mgr.refresh_perf_visible().await;
+                }
+                self.pending_redraw = true;
             }
         }
         Ok(())
@@ -361,14 +369,14 @@ impl App {
                         resource_mgr.load_history_record(record).await?;
                     }
                     BodyPane::PropertyBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
-                        self.body_pane = BodyPane::ResourceBrowser(
+                        self.body_pane = BodyPane::ResourceBrowser(Box::new(
                             ResourceManager::from_history_record(
                                 record,
                                 self.client.clone(),
                                 self.cache_mgr.clone(),
                             )
                             .await?,
-                        );
+                        ));
                     }
                 },
                 History::Property(record) => match record {

@@ -1,7 +1,9 @@
 use crate::resource_browser::formatting::{
-    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, status_color,
+    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_compact_metric,
+    sparkline_from_perf_samples, status_color,
 };
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_browser::perf::PerfRowsSnapshot;
+use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::Style;
@@ -15,8 +17,9 @@ vim_updatable!(
         connection_state = "runtime.connection_state",
         name = "name",
         version = "config.product.version",
-        cpu_usage = "summary.quick_stats.overall_cpu_usage",
-        memory_usage = "summary.quick_stats.overall_memory_usage",
+        hw_cpu_mhz = "summary.hardware.cpu_mhz",
+        hw_num_cpu_cores = "summary.hardware.num_cpu_cores",
+        hw_memory_size = "summary.hardware.memory_size",
         uptime = "summary.quick_stats.uptime",
         vms = "vm.length",
         networks = "network.length",
@@ -24,60 +27,74 @@ vim_updatable!(
     }
 );
 
-impl From<&Host> for Row<'_> {
-    fn from(host: &Host) -> Self {
-        let color = status_color(&host.overall_status);
-        let version = if let Some(version) = host.version.as_ref() {
+impl Host {
+    fn cpu_capacity_mhz(&self) -> Option<i32> {
+        let mhz = self.hw_cpu_mhz?;
+        let cores = self.hw_num_cpu_cores?;
+        Some(mhz * i32::from(cores))
+    }
+}
+
+impl InventoryRowBuilder for Host {
+    fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+        let color = status_color(&self.overall_status);
+        let version = if let Some(version) = self.version.as_ref() {
             Cell::from(version.to_string())
         } else {
             Cell::default()
         };
-        let host_cpu = if let Some(host_cpu) = host.cpu_usage {
-            Cell::from(format!("{:.2} MHz", host_cpu as f32))
-        } else {
-            Cell::default()
-        };
-        let memory_usage = if let Some(memory_usage) = host.memory_usage {
-            if memory_usage > 1024 {
-                Cell::from(format!("{:.2} GiB", memory_usage as f32 / 1024.0))
-            } else {
-                Cell::from(format!("{:.2} MiB", memory_usage as f32))
-            }
-        } else {
-            Cell::default()
-        };
+
+        let (cpu_slots, mem_slots) = perf
+            .map(|p| p.cpu_mem_slots(&self.id))
+            .unwrap_or(([None; 6], [None; 6]));
+
+        let spark_cpu = sparkline_from_perf_samples(&cpu_slots);
+        let spark_mem = sparkline_from_perf_samples(&mem_slots);
+
+        let cap_cpu = self
+            .cpu_capacity_mhz()
+            .map(|mhz| format_compact_metric(mhz as f64))
+            .unwrap_or_else(|| "    ".to_string());
+        let cap_mem = self
+            .hw_memory_size
+            .map(|b| format_compact_metric(b as f64))
+            .unwrap_or_else(|| "    ".to_string());
+
+        let host_cpu = Cell::from(format!("{spark_cpu}{cap_cpu}"));
+        let memory_cell = Cell::from(format!("{spark_mem}{cap_mem}"));
+
         // connected, not_responding, disconnected
-        let (symbol, conn_color) = match host.connection_state {
+        let (symbol, conn_color) = match self.connection_state {
             HostSystemConnectionStateEnum::Connected => ("✓", ratatui::style::Color::Green),
             HostSystemConnectionStateEnum::NotResponding => ("!", ratatui::style::Color::Yellow),
             HostSystemConnectionStateEnum::Disconnected => ("✗", ratatui::style::Color::Red),
             _ => ("?", ratatui::style::Color::Gray),
         };
 
-        let vms = if let Some(vms) = host.vms {
+        let vms = if let Some(vms) = self.vms {
             Cell::from(vms.to_string())
         } else {
             Cell::default()
         };
-        let networks = if let Some(networks) = host.networks {
+        let networks = if let Some(networks) = self.networks {
             Cell::from(networks.to_string())
         } else {
             Cell::default()
         };
-        let datastores = if let Some(datastores) = host.datastores {
+        let datastores = if let Some(datastores) = self.datastores {
             Cell::from(datastores.to_string())
         } else {
             Cell::default()
         };
 
         Row::new(vec![
-            Cell::from(host.id.value.clone()),
+            Cell::from(self.id.value.clone()),
             Cell::from(Span::from(STATUS).style(color)),
             Cell::from(Span::styled(symbol, Style::new().fg(conn_color))),
-            Cell::from(Span::from(host.name.clone())),
+            Cell::from(Span::from(self.name.clone())),
             version,
             host_cpu,
-            memory_usage,
+            memory_cell,
             vms,
             networks,
             datastores,
@@ -96,8 +113,8 @@ impl TabularData for Host {
             Constraint::Length(2),
             Constraint::Fill(1),
             Constraint::Max(7),
-            Constraint::Max(12),
-            Constraint::Max(12),
+            Constraint::Length(10),
+            Constraint::Length(10),
             Constraint::Max(5),
             Constraint::Max(5),
             Constraint::Max(5),
@@ -120,8 +137,8 @@ impl TabularData for Host {
             0 => Box::new(|a, b| a.id.value.cmp(&b.id.value)),
             3 => Box::new(|a, b| a.name.cmp(&b.name)),
             4 => Box::new(|a, b| a.version.cmp(&b.version)),
-            5 => Box::new(|a, b| a.cpu_usage.cmp(&b.cpu_usage)),
-            6 => Box::new(|a, b| a.memory_usage.cmp(&b.memory_usage)),
+            5 => Box::new(|a, b| a.cpu_capacity_mhz().cmp(&b.cpu_capacity_mhz())),
+            6 => Box::new(|a, b| a.hw_memory_size.cmp(&b.hw_memory_size)),
             7 => Box::new(|a, b| a.vms.cmp(&b.vms)),
             8 => Box::new(|a, b| a.networks.cmp(&b.networks)),
             _ => return None,

@@ -545,11 +545,13 @@ impl StatefulWidget for PropertyBrowser<'_> {
                     .title_alignment(Alignment::Center)
                     .title_bottom(
                         Line::from(vec![
+                            Span::raw(" "),
                             Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
                             Span::styled(
                                 env!("CARGO_PKG_VERSION"),
                                 Style::default().fg(Color::DarkGray),
                             ),
+                            Span::raw(" "),
                         ])
                         .alignment(Alignment::Left),
                     )

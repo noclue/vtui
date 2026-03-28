@@ -1,8 +1,9 @@
-use crate::resource_browser::formatting;
+use crate::resource_browser::formatting::{self, format_compact_memory_size};
 use crate::resource_browser::formatting::{
-    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_byte_size,
+    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_byte_size, sparkline_from_perf_samples,
 };
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_browser::perf::PerfRowsSnapshot;
+use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style, Stylize};
@@ -16,8 +17,8 @@ vim_updatable!(
         name = "name",
         os = "summary.guest.guest_full_name",
         storage = "summary.storage",
-        host_cpu = "summary.quick_stats.overall_cpu_usage",
-        host_memory = "summary.quick_stats.host_memory_usage",
+        num_cpu = "summary.config.num_cpu",
+        memory_size_mb = "summary.config.memory_size_mb",
         status = "overall_status",
         power_state = "runtime.power_state",
     }
@@ -29,10 +30,10 @@ const POWER_OFF: &str = "○ ";
 // U+25CB
 const SUSPENDED: &str = "◐ ";
 
-impl From<&VmData> for Row<'_> {
-    fn from(vm: &VmData) -> Self {
-        let color = formatting::status_color(&vm.status);
-        let power_state = match vm.power_state {
+impl InventoryRowBuilder for VmData {
+    fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+        let color = formatting::status_color(&self.status);
+        let power_state = match self.power_state {
             VirtualMachinePowerStateEnum::PoweredOn => {
                 Span::styled(POWER_ON, Style::default().fg(Color::Green))
             }
@@ -44,32 +45,37 @@ impl From<&VmData> for Row<'_> {
             }
             _ => Span::from("?").gray(),
         };
-        let used_space = if let Some(ref storage) = vm.storage {
+        let used_space = if let Some(ref storage) = self.storage {
             format_byte_size(storage.committed)
         } else {
             Cell::default()
         };
-        let host_cpu = if let Some(host_cpu) = vm.host_cpu {
-            Cell::from(format!("{:.2} MHz", host_cpu as f32))
-        } else {
-            Cell::default()
-        };
-        let host_memory = if let Some(host_memory) = vm.host_memory {
-            if host_memory > 1024 {
-                Cell::from(format!("{:.2} GiB", host_memory as f32 / 1024.0))
-            } else {
-                Cell::from(format!("{:.2} MiB", host_memory as f32))
-            }
-        } else {
-            Cell::default()
-        };
+
+        let (cpu_slots, mem_slots) = perf
+            .map(|p| p.cpu_mem_slots(&self.id))
+            .unwrap_or(([None; 6], [None; 6]));
+
+        let spark_cpu = sparkline_from_perf_samples(&cpu_slots);
+        let spark_mem = sparkline_from_perf_samples(&mem_slots);
+
+        let cap_cpu = self
+            .num_cpu
+            .map(|n| format!("{:>3}c", n))
+            .unwrap_or_else(|| "    ".to_string());
+        let cap_mem = self
+            .memory_size_mb
+            .map(|mb| format_compact_memory_size(mb as i64))
+            .unwrap_or_else(|| "    ".to_string());
+
+        let host_cpu = Cell::from(format!("{spark_cpu}{cap_cpu}"));
+        let host_memory = Cell::from(format!("{spark_mem}{cap_mem}"));
 
         Row::new(vec![
-            Cell::from(vm.id.value.clone()),
+            Cell::from(self.id.value.clone()),
             Cell::from(Span::from(STATUS).style(color)),
             Cell::from(power_state),
-            Cell::from(vm.name.clone()),
-            Cell::from(vm.os.clone().unwrap_or("<unknown>".to_string())),
+            Cell::from(self.name.clone()),
+            Cell::from(self.os.clone().unwrap_or("<unknown>".to_string())),
             used_space,
             host_cpu,
             host_memory,
@@ -89,8 +95,8 @@ impl TabularData for VmData {
             Constraint::Fill(1),
             Constraint::Max(15),
             Constraint::Max(12),
-            Constraint::Max(12),
-            Constraint::Max(12),
+            Constraint::Length(10),
+            Constraint::Length(11),
         ]
     }
 
@@ -123,8 +129,8 @@ impl TabularData for VmData {
                     .map_or(0, |s| s.committed)
                     .cmp(&b.storage.as_ref().map_or(0, |s| s.committed))
             }),
-            6 => Box::new(|a, b| a.host_cpu.cmp(&b.host_cpu)),
-            7 => Box::new(|a, b| a.host_memory.cmp(&b.host_memory)),
+            6 => Box::new(|a, b| a.num_cpu.cmp(&b.num_cpu)),
+            7 => Box::new(|a, b| a.memory_size_mb.cmp(&b.memory_size_mb)),
             _ => return None,
         };
         if descending {

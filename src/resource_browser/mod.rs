@@ -7,6 +7,7 @@ mod hints;
 mod host;
 mod indexed_cache;
 mod network;
+mod perf;
 mod resource_mgr;
 mod resource_table;
 mod tabular_data;

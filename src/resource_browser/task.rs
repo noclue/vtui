@@ -1,5 +1,6 @@
 use crate::resource_browser::formatting::ID_COLUMN_WIDTH;
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_browser::perf::PerfRowsSnapshot;
+use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
 use crate::resource_type::ResourceType;
 use chrono::{DateTime, FixedOffset, TimeDelta};
 use ratatui::layout::Constraint;
@@ -59,6 +60,12 @@ impl From<&TaskInfo> for Row<'_> {
             task_duration_cell(&task.initiated, &task.completed),
             Cell::from(get_initiator(task)),
         ])
+    }
+}
+
+impl InventoryRowBuilder for TaskInfo {
+    fn inventory_row(&self, _perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+        Row::from(self)
     }
 }
 

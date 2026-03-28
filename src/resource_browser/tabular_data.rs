@@ -1,3 +1,4 @@
+use crate::resource_browser::perf::{PerfRowsSnapshot, PerfSnapshotShare};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::widgets::Row;
@@ -34,6 +35,11 @@ pub trait TabularData {
     fn resource_type() -> ResourceType;
 }
 
+/// Build a table row, optionally using live performance history (VM/Host CPU/mem sparklines).
+pub trait InventoryRowBuilder: TabularData {
+    fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static>;
+}
+
 /// Trait for data sources that can be displayed in a table.
 pub trait TableDataSource {
     fn get_title(&self) -> &'static str;
@@ -62,4 +68,7 @@ pub trait TableDataSource {
     ) -> Option<super::events::EventBrowserPayload> {
         None
     }
+
+    /// VM/Host tables pass a shared perf snapshot; other sources ignore it.
+    fn set_perf_snapshot(&mut self, _perf: Option<PerfSnapshotShare>) {}
 }

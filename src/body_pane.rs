@@ -8,7 +8,7 @@ use ratatui::layout::Rect;
 // Variant names intentionally end with `Browser` to match the widget role in the UI.
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum BodyPane {
-    ResourceBrowser(ResourceManager),
+    ResourceBrowser(Box<ResourceManager>),
     PropertyBrowser(PropertyBrowserManager),
     StaticPropertyBrowser(StaticPropertyBrowserManager),
 }

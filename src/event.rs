@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use tokio::sync::mpsc;
+use tokio::time::{self, Duration, MissedTickBehavior};
 use vim_rs::core::pc_cache::Monitor;
 use vim_rs::types::structs::{ManagedObjectReference, PropertyFilterUpdate};
 
@@ -53,6 +54,9 @@ pub enum AppEvent {
 
     ResourceManagerHistory(ResourceHistoryRecord),
     PropertyManagerHistory(PropertyHistoryRecord),
+
+    /// Periodic refresh of VM/Host performance sparklines (~20s).
+    PerfTick,
 }
 
 /// Terminal event handler.
@@ -138,16 +142,23 @@ impl EventTask {
     /// This function emits tick events at a fixed rate and polls for crossterm events in between.
     async fn run(&mut self) -> Result<()> {
         let mut reader = crossterm::event::EventStream::new();
+        let start = tokio::time::Instant::now() + Duration::from_secs(20);
+        let mut perf_interval = time::interval_at(start, Duration::from_secs(20));
+        perf_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             // let tick_delay = tick.tick();
             let crossterm_event = reader.next().fuse();
             let updates = self.monitor.wait_updates(100).fuse();
+            let perf_tick = perf_interval.tick().fuse();
             tokio::select! {
                 _ = self.sender.closed() => {
                     break;
                 }
                 Some(Ok(evt)) = crossterm_event => {
                     self.send(Event::Crossterm(evt));
+                }
+                _ = perf_tick => {
+                    self.send(Event::App(Box::new(AppEvent::PerfTick)));
                 }
                 updates_result = updates => {
                     match updates_result {
