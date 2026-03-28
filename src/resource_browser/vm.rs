@@ -154,3 +154,59 @@ impl TabularData for VmData {
         ResourceType::VirtualMachine
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::VmData;
+    use crate::resource_browser::tabular_data::TabularData;
+    use vim_rs::types::enums::{
+        ManagedEntityStatusEnum, MoTypesEnum, VirtualMachinePowerStateEnum,
+    };
+    use vim_rs::types::structs::{ManagedObjectReference, VirtualMachineStorageSummary};
+
+    fn sample_vm(value: &str, name: &str, os: Option<&str>, committed: Option<i64>) -> VmData {
+        VmData {
+            id: ManagedObjectReference {
+                r#type: MoTypesEnum::VirtualMachine,
+                value: value.into(),
+            },
+            name: name.into(),
+            os: os.map(String::from),
+            storage: committed.map(|c| VirtualMachineStorageSummary {
+                committed: c,
+                uncommitted: 0,
+                unshared: 0,
+                timestamp: String::new(),
+            }),
+            host_cpu: None,
+            host_memory: None,
+            status: ManagedEntityStatusEnum::Green,
+            power_state: VirtualMachinePowerStateEnum::PoweredOn,
+        }
+    }
+
+    #[test]
+    fn matches_filter_name_id_and_os() {
+        let vm = sample_vm("vm-42", "db-01", Some("Linux"), None);
+        assert!(vm.matches_filter("db"));
+        assert!(vm.matches_filter("VM-42"));
+        assert!(vm.matches_filter("linux"));
+        assert!(!vm.matches_filter("zzz"));
+    }
+
+    #[test]
+    fn sort_by_name_column_orders_lexicographically() {
+        let a = sample_vm("1", "antelope", None, None);
+        let z = sample_vm("2", "zebra", None, None);
+        let mut cmp = VmData::sort_by_column(3, false).expect("column 3 sortable");
+        assert_eq!(cmp(&a, &z), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn sort_by_storage_column_uses_committed_bytes() {
+        let small = sample_vm("1", "a", None, Some(100));
+        let large = sample_vm("2", "b", None, Some(9_000));
+        let mut cmp = VmData::sort_by_column(5, false).expect("column 5 sortable");
+        assert_eq!(cmp(&small, &large), std::cmp::Ordering::Less);
+    }
+}

@@ -175,10 +175,10 @@ mod snapshot_tests {
     use crate::resource_browser::tabular_data::TableDataSource;
     use crate::resource_type::ResourceType;
     use insta::assert_snapshot;
+    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Constraint;
     use ratatui::widgets::{Cell, Row, TableState};
-    use ratatui::Terminal;
     use vim_rs::types::enums::MoTypesEnum;
     use vim_rs::types::structs::ManagedObjectReference;
 
@@ -198,11 +198,7 @@ mod snapshot_tests {
             Self {
                 title,
                 header: vec!["ID", "Name", "Note"],
-                widths: vec![
-                    Constraint::Min(8),
-                    Constraint::Min(14),
-                    Constraint::Min(10),
-                ],
+                widths: vec![Constraint::Min(8), Constraint::Min(14), Constraint::Min(10)],
                 rows,
                 filter: None,
                 sort: None,
@@ -315,10 +311,8 @@ mod snapshot_tests {
 
     #[test]
     fn resource_table_with_filter_and_parent_snapshot() {
-        let mut mock = MockTableSource::new(
-            "Mock VMs",
-            vec![row_three_cells("vm-9", "gamma", "ok")],
-        );
+        let mut mock =
+            MockTableSource::new("Mock VMs", vec![row_three_cells("vm-9", "gamma", "ok")]);
         mock.set_filter(Some("gamma".into()));
         mock.set_sort_setting(1, false);
         let parent = Some((

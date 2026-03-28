@@ -184,3 +184,179 @@ where
         T::resource_type()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::IndexedCache;
+    use crate::resource_browser::host::Host;
+    use crate::resource_browser::tabular_data::TableDataSource;
+    use crate::resource_browser::vm::VmData;
+    use std::sync::{Arc, RwLock};
+    use vim_rs::core::pc_cache::{Cache, ObjectCache};
+    use vim_rs::types::boxed_types::ValueElements;
+    use vim_rs::types::enums::{
+        HostSystemConnectionStateEnum, ManagedEntityStatusEnum, MoTypesEnum, ObjectUpdateKindEnum,
+        PropertyChangeOpEnum, VirtualMachinePowerStateEnum,
+    };
+    use vim_rs::types::structs::{
+        ManagedObjectReference, ObjectUpdate, PropertyChange, VirtualMachineStorageSummary,
+    };
+    use vim_rs::types::vim_any::VimAny;
+
+    fn prop_assign(name: &str, val: VimAny) -> PropertyChange {
+        PropertyChange {
+            name: name.to_string(),
+            op: PropertyChangeOpEnum::Assign,
+            val: Some(val),
+        }
+    }
+
+    fn vm_enter(mo_id: &str, display_name: &str, storage_committed: Option<i64>) -> ObjectUpdate {
+        let mut changes = vec![
+            prop_assign(
+                "name",
+                VimAny::Value(ValueElements::PrimitiveString(display_name.into())),
+            ),
+            prop_assign(
+                "overallStatus",
+                VimAny::Value(ValueElements::ManagedEntityStatus(
+                    ManagedEntityStatusEnum::Green,
+                )),
+            ),
+            prop_assign(
+                "runtime.powerState",
+                VimAny::Value(ValueElements::VirtualMachinePowerState(
+                    VirtualMachinePowerStateEnum::PoweredOn,
+                )),
+            ),
+        ];
+        if let Some(c) = storage_committed {
+            changes.push(prop_assign(
+                "summary.storage",
+                VimAny::Object(Box::new(VirtualMachineStorageSummary {
+                    committed: c,
+                    uncommitted: 0,
+                    unshared: 0,
+                    timestamp: String::new(),
+                })),
+            ));
+        }
+        ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Enter,
+            obj: ManagedObjectReference {
+                r#type: MoTypesEnum::VirtualMachine,
+                value: mo_id.into(),
+            },
+            change_set: Some(changes),
+            missing_set: None,
+        }
+    }
+
+    fn host_enter(mo_id: &str, display_name: &str) -> ObjectUpdate {
+        ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Enter,
+            obj: ManagedObjectReference {
+                r#type: MoTypesEnum::HostSystem,
+                value: mo_id.into(),
+            },
+            change_set: Some(vec![
+                prop_assign(
+                    "name",
+                    VimAny::Value(ValueElements::PrimitiveString(display_name.into())),
+                ),
+                prop_assign(
+                    "summary.overallStatus",
+                    VimAny::Value(ValueElements::ManagedEntityStatus(
+                        ManagedEntityStatusEnum::Green,
+                    )),
+                ),
+                prop_assign(
+                    "runtime.connectionState",
+                    VimAny::Value(ValueElements::HostSystemConnectionState(
+                        HostSystemConnectionStateEnum::Connected,
+                    )),
+                ),
+            ]),
+            missing_set: None,
+        }
+    }
+
+    #[test]
+    fn indexed_vm_cache_filter_len_and_total_count() {
+        let cache = Arc::new(RwLock::new(ObjectCache::<VmData>::new()));
+        cache
+            .write()
+            .expect("lock")
+            .process_update(vec![
+                vm_enter("vm-1", "antelope", None),
+                vm_enter("vm-2", "bee", None),
+                vm_enter("vm-3", "cat", None),
+            ])
+            .expect("process_update");
+
+        let mut idx = IndexedCache::new(cache);
+        assert_eq!(idx.total_count(), 3);
+        assert_eq!(idx.len(), 3);
+
+        idx.set_filter(Some("a".into()));
+        assert_eq!(idx.total_count(), 3);
+        assert_eq!(idx.len(), 2);
+
+        idx.set_filter(None);
+        assert_eq!(idx.len(), 3);
+    }
+
+    #[test]
+    fn indexed_vm_cache_sort_by_name_and_item_at_index() {
+        let cache = Arc::new(RwLock::new(ObjectCache::<VmData>::new()));
+        cache
+            .write()
+            .expect("lock")
+            .process_update(vec![
+                vm_enter("vm-z", "zebra", None),
+                vm_enter("vm-a", "antelope", None),
+            ])
+            .expect("process_update");
+
+        let mut idx = IndexedCache::new(cache);
+        idx.set_sort_setting(3, false);
+        let (id, name) = idx.item_at_index(0).expect("row 0");
+        assert_eq!(id.value, "vm-a");
+        assert_eq!(name, "antelope");
+        let (id2, _) = idx.item_at_index(1).expect("row 1");
+        assert_eq!(id2.value, "vm-z");
+    }
+
+    #[test]
+    fn indexed_vm_cache_sort_by_storage_column() {
+        let cache = Arc::new(RwLock::new(ObjectCache::<VmData>::new()));
+        cache
+            .write()
+            .expect("lock")
+            .process_update(vec![
+                vm_enter("vm-big", "b", Some(10_000)),
+                vm_enter("vm-small", "s", Some(100)),
+            ])
+            .expect("process_update");
+
+        let mut idx = IndexedCache::new(cache);
+        idx.set_sort_setting(5, false);
+        let (id, _) = idx.item_at_index(0).expect("row 0");
+        assert_eq!(id.value, "vm-small");
+    }
+
+    #[test]
+    fn indexed_host_cache_sort_by_id() {
+        let cache = Arc::new(RwLock::new(ObjectCache::<Host>::new()));
+        cache
+            .write()
+            .expect("lock")
+            .process_update(vec![host_enter("host-b", "B"), host_enter("host-a", "A")])
+            .expect("process_update");
+
+        let mut idx = IndexedCache::new(cache);
+        idx.set_sort_setting(0, false);
+        let (id, _) = idx.item_at_index(0).expect("row 0");
+        assert_eq!(id.value, "host-a");
+    }
+}

@@ -577,13 +577,283 @@ impl StatefulWidget for PropertyBrowser<'_> {
     }
 }
 
+/// Phase 5 (`testing_strategy.md`): `PropertyBrowserState` behavior with **hand-authored static JSON**
+/// and synthetic `ObjectUpdate` payloads. No live vCenter or fixture files are required; recording
+/// real `ObjectUpdate` JSON under `tests/fixtures/` is optional if you want heavier regression data.
+#[cfg(test)]
+mod property_browser_state_unit_tests {
+    use super::{BrowserMetadata, PropertyBrowserState};
+    use futures::executor::block_on;
+    use miniserde::json::{Object, Value};
+    use vim_rs::core::pc_cache::Cache;
+    use vim_rs::types::boxed_types::ValueElements;
+    use vim_rs::types::enums::{MoTypesEnum, ObjectUpdateKindEnum, PropertyChangeOpEnum};
+    use vim_rs::types::structs::{ManagedObjectReference, ObjectUpdate, PropertyChange};
+    use vim_rs::types::vim_any::VimAny;
+
+    fn vm_moref() -> ManagedObjectReference {
+        ManagedObjectReference {
+            r#type: MoTypesEnum::VirtualMachine,
+            value: "vm-unit-test".into(),
+        }
+    }
+
+    fn json_object_str(s: &str) -> Object {
+        match miniserde::json::from_str::<Value>(s).expect("fixture JSON") {
+            Value::Object(o) => o,
+            _ => panic!("expected JSON object"),
+        }
+    }
+
+    #[test]
+    fn load_json_root_sets_properties_and_selects_first_key_when_tree_was_empty() {
+        let root = json_object_str(r#"{"zebra":1,"alpha":2}"#);
+        let meta = BrowserMetadata {
+            title: "t".into(),
+            dump_prefix: "p".into(),
+        };
+        let state =
+            PropertyBrowserState::from_static_json(meta.clone(), root, None).expect("state");
+        assert_eq!(state.properties.len(), 2);
+        assert_eq!(state.metadata.title, "t");
+        assert!(!state.state.selected().is_empty());
+    }
+
+    #[test]
+    fn load_json_root_returns_previous_tree_state() {
+        let root1 = json_object_str(r#"{"a":true}"#);
+        let root2 = json_object_str(r#"{"b":false}"#);
+        let mut ts = tui_tree_widget::TreeState::default();
+        let _ = ts.select(vec!["a".to_string()]);
+        let mut state = PropertyBrowserState::from_static_json(
+            BrowserMetadata {
+                title: String::new(),
+                dump_prefix: String::new(),
+            },
+            root1,
+            Some(ts),
+        )
+        .expect("state");
+        let prev = state.load_json_root(
+            BrowserMetadata {
+                title: "x".into(),
+                dump_prefix: "y".into(),
+            },
+            None,
+            root2,
+            None,
+        );
+        assert_eq!(prev.selected(), &["a".to_string()]);
+        assert_eq!(state.metadata.dump_prefix, "y");
+    }
+
+    #[test]
+    fn static_history_snapshot_roundtrips_root_keys() {
+        let root = json_object_str(r#"{"name":"x","nested":{"k":1}}"#);
+        let meta = BrowserMetadata {
+            title: "Event : 1".into(),
+            dump_prefix: "E_1".into(),
+        };
+        let state =
+            PropertyBrowserState::from_static_json(meta.clone(), root.clone(), None).expect("s");
+        let (m2, r2) = state.static_history_snapshot();
+        assert_eq!(m2.title, meta.title);
+        assert_eq!(r2.len(), root.len());
+        assert!(r2.contains_key("name"));
+        assert!(r2.contains_key("nested"));
+    }
+
+    #[test]
+    fn get_selected_object_resolves_managed_object_reference_leaf() {
+        let moref_json = json_object_str(
+            r#"{"_typeName":"ManagedObjectReference","type":"VirtualMachine","value":"vm-42"}"#,
+        );
+        let mut root = Object::new();
+        root.insert("vm".into(), Value::Object(moref_json));
+        let mut ts = tui_tree_widget::TreeState::default();
+        let _ = ts.select(vec!["vm".to_string()]);
+        let state = PropertyBrowserState::from_static_json(
+            BrowserMetadata {
+                title: String::new(),
+                dump_prefix: String::new(),
+            },
+            root,
+            Some(ts),
+        )
+        .expect("state");
+        let mo = state.get_selected_object().expect("moref");
+        assert_eq!(mo.r#type, MoTypesEnum::VirtualMachine);
+        assert_eq!(mo.value, "vm-42");
+    }
+
+    #[test]
+    fn get_selected_object_none_for_non_moref_leaf() {
+        let root = json_object_str(r#"{"name":"only-a-string"}"#);
+        let mut ts = tui_tree_widget::TreeState::default();
+        let _ = ts.select(vec!["name".to_string()]);
+        let state = PropertyBrowserState::from_static_json(
+            BrowserMetadata {
+                title: String::new(),
+                dump_prefix: String::new(),
+            },
+            root,
+            Some(ts),
+        )
+        .expect("state");
+        assert!(state.get_selected_object().is_none());
+    }
+
+    #[test]
+    fn set_obj_clears_properties_and_updates_metadata() {
+        let root = json_object_str(r#"{"f":1}"#);
+        let mut state = block_on(PropertyBrowserState::new(vm_moref(), None)).expect("new");
+        let _ = state.load_json_root(
+            BrowserMetadata::for_managed_object(&vm_moref()),
+            Some(vm_moref()),
+            root,
+            None,
+        );
+        assert!(!state.properties.is_empty());
+        let new_obj = ManagedObjectReference {
+            r#type: MoTypesEnum::HostSystem,
+            value: "host-9".into(),
+        };
+        let _ = state.set_obj(new_obj.clone(), None).expect("set_obj");
+        assert!(state.properties.is_empty());
+        assert!(state.items.is_empty());
+        assert_eq!(state.obj.as_ref().expect("obj").value, "host-9");
+    }
+
+    #[tokio::test]
+    async fn process_update_assign_updates_name_property() {
+        let mut state = PropertyBrowserState::new(vm_moref(), None)
+            .await
+            .expect("new");
+        let update = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Modify,
+            obj: vm_moref(),
+            change_set: Some(vec![PropertyChange {
+                name: "name".into(),
+                op: PropertyChangeOpEnum::Assign,
+                val: Some(VimAny::Value(ValueElements::PrimitiveString(
+                    "updated-vm".into(),
+                ))),
+            }]),
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![update]).expect("process_update");
+        match state.properties.get("name") {
+            Some(Value::String(s)) => assert_eq!(s, "updated-vm"),
+            o => panic!("expected name string, got {:?}", o),
+        }
+        assert_eq!(state.get_object_name().as_deref(), Some("updated-vm"));
+    }
+
+    #[tokio::test]
+    async fn process_update_leave_clears_view() {
+        let mut state = PropertyBrowserState::new(vm_moref(), None)
+            .await
+            .expect("new");
+        let fill = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Modify,
+            obj: vm_moref(),
+            change_set: Some(vec![PropertyChange {
+                name: "name".into(),
+                op: PropertyChangeOpEnum::Assign,
+                val: Some(VimAny::Value(ValueElements::PrimitiveString("v".into()))),
+            }]),
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![fill]).expect("fill");
+        let leave = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Leave,
+            obj: vm_moref(),
+            change_set: None,
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![leave]).expect("leave");
+        assert!(state.properties.is_empty());
+        assert!(state.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_update_ignores_wrong_object_id() {
+        let mut state = PropertyBrowserState::new(vm_moref(), None)
+            .await
+            .expect("new");
+        let wrong = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Modify,
+            obj: ManagedObjectReference {
+                r#type: MoTypesEnum::VirtualMachine,
+                value: "other-vm".into(),
+            },
+            change_set: Some(vec![PropertyChange {
+                name: "name".into(),
+                op: PropertyChangeOpEnum::Assign,
+                val: Some(VimAny::Value(ValueElements::PrimitiveString(
+                    "ghost".into(),
+                ))),
+            }]),
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![wrong]).expect("process_update");
+        assert!(state.properties.is_empty());
+    }
+
+    #[tokio::test]
+    async fn static_view_process_update_is_no_op() {
+        let root = json_object_str(r#"{"k":1}"#);
+        let mut state = PropertyBrowserState::from_static_json(
+            BrowserMetadata {
+                title: String::new(),
+                dump_prefix: String::new(),
+            },
+            root,
+            None,
+        )
+        .expect("static");
+        let update = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Modify,
+            obj: vm_moref(),
+            change_set: Some(vec![PropertyChange {
+                name: "name".into(),
+                op: PropertyChangeOpEnum::Assign,
+                val: Some(VimAny::Value(ValueElements::PrimitiveString("nope".into()))),
+            }]),
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![update]).expect("process_update");
+        match state.properties.get("k") {
+            Some(Value::Number(miniserde::json::Number::U64(1))) => {}
+            o => panic!("expected k=1, got {:?}", o),
+        }
+    }
+
+    #[test]
+    fn generate_json_filename_static_uses_dump_prefix_and_json_extension() {
+        let root = json_object_str("{}");
+        let state = PropertyBrowserState::from_static_json(
+            BrowserMetadata {
+                title: "T".into(),
+                dump_prefix: "My_Event_9".into(),
+            },
+            root,
+            None,
+        )
+        .expect("state");
+        let name = state.generate_json_filename().expect("filename");
+        assert!(name.ends_with(".json"));
+        assert!(name.contains("My_Event_9"));
+    }
+}
+
 #[cfg(test)]
 mod snapshot_tests {
     use super::{BrowserMetadata, PropertyBrowser, PropertyBrowserState};
     use insta::assert_snapshot;
     use miniserde::json::{Object, Value};
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use tui_tree_widget::TreeState;
 
     fn sample_root_object() -> Object {
@@ -612,12 +882,11 @@ mod snapshot_tests {
         let mut state =
             PropertyBrowserState::from_static_json(metadata, root, tree_state).expect("state");
         let mut term = Terminal::new(TestBackend::new(78, 20)).unwrap();
-        term
-            .draw(|f| {
-                let w = PropertyBrowser::new();
-                f.render_stateful_widget(w, f.area(), &mut state);
-            })
-            .unwrap();
+        term.draw(|f| {
+            let w = PropertyBrowser::new();
+            f.render_stateful_widget(w, f.area(), &mut state);
+        })
+        .unwrap();
         format!("{}", term.backend())
     }
 

@@ -684,3 +684,188 @@ pub async fn create_entity_event_view(
     }));
     create_event_table(client, cache_mgr, filter).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        EventRow, decode_event_type, decode_main_object, event_browser_metadata,
+        event_to_browser_object,
+    };
+    use std::collections::HashMap;
+    use vim_rs::types::enums::MoTypesEnum;
+    use vim_rs::types::struct_enum::StructType;
+    use vim_rs::types::structs::{
+        EntityEventArgument, Event, ManagedObjectReference, VmEventArgument,
+    };
+
+    fn base_event() -> Event {
+        Event {
+            key: 0,
+            chain_id: 0,
+            created_time: "2024-06-01T12:00:00Z".into(),
+            user_name: String::new(),
+            datacenter: None,
+            compute_resource: None,
+            host: None,
+            vm: None,
+            ds: None,
+            net: None,
+            dvs: None,
+            full_formatted_message: None,
+            change_tag: None,
+            type_: None,
+            extra_fields_: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn decode_event_type_defaults_to_event_when_discriminator_missing() {
+        let e = base_event();
+        assert_eq!(decode_event_type(&e), "Event");
+    }
+
+    #[test]
+    fn decode_event_type_uses_struct_type_when_present() {
+        let mut e = base_event();
+        e.type_ = Some(StructType::VmPoweredOnEvent);
+        assert_eq!(decode_event_type(&e), "VmPoweredOnEvent");
+    }
+
+    #[test]
+    fn decode_event_type_eventex_uses_event_type_id_extra_field() {
+        let mut e = base_event();
+        e.type_ = Some(StructType::EventEx);
+        e.extra_fields_.insert(
+            "eventTypeId".into(),
+            miniserde::json::Value::String("com.acme.custom".into()),
+        );
+        assert_eq!(decode_event_type(&e), "com.acme.custom");
+    }
+
+    #[test]
+    fn decode_main_object_from_managed_object_json() {
+        let mut m = miniserde::json::Object::new();
+        m.insert(
+            "type".into(),
+            miniserde::json::Value::String("VirtualMachine".into()),
+        );
+        m.insert(
+            "value".into(),
+            miniserde::json::Value::String("vm-7".into()),
+        );
+        let mut e = base_event();
+        e.extra_fields_
+            .insert("managedObject".into(), miniserde::json::Value::Object(m));
+        let d = decode_main_object(&e);
+        assert_eq!(d.type_label, "VirtualMachine");
+        assert_eq!(d.id, "vm-7");
+        assert!(d.moref.is_some());
+    }
+
+    #[test]
+    fn decode_main_object_from_event_ex_fields() {
+        let mut e = base_event();
+        e.extra_fields_.insert(
+            "objectType".into(),
+            miniserde::json::Value::String("HostSystem".into()),
+        );
+        e.extra_fields_.insert(
+            "objectId".into(),
+            miniserde::json::Value::String("host-12".into()),
+        );
+        e.extra_fields_.insert(
+            "objectName".into(),
+            miniserde::json::Value::String("esxi-01".into()),
+        );
+        let d = decode_main_object(&e);
+        assert_eq!(d.type_label, "HostSystem");
+        assert_eq!(d.id, "host-12");
+        assert_eq!(d.name.as_deref(), Some("esxi-01"));
+        let mo = d.moref.expect("moref");
+        assert_eq!(mo.value, "host-12");
+    }
+
+    #[test]
+    fn decode_main_object_prefers_managed_object_over_event_ex() {
+        let mut e = base_event();
+        let mut mo = miniserde::json::Object::new();
+        mo.insert(
+            "type".into(),
+            miniserde::json::Value::String("Datastore".into()),
+        );
+        mo.insert(
+            "value".into(),
+            miniserde::json::Value::String("ds-1".into()),
+        );
+        e.extra_fields_
+            .insert("managedObject".into(), miniserde::json::Value::Object(mo));
+        e.extra_fields_.insert(
+            "objectType".into(),
+            miniserde::json::Value::String("HostSystem".into()),
+        );
+        e.extra_fields_.insert(
+            "objectId".into(),
+            miniserde::json::Value::String("host-99".into()),
+        );
+        let d = decode_main_object(&e);
+        assert_eq!(d.type_label, "Datastore");
+        assert_eq!(d.id, "ds-1");
+    }
+
+    #[test]
+    fn decode_main_object_vm_argument() {
+        let mut e = base_event();
+        e.vm = Some(VmEventArgument {
+            entity_event_argument_: EntityEventArgument {
+                name: "folder/vm-1".into(),
+            },
+            vm: ManagedObjectReference {
+                r#type: MoTypesEnum::VirtualMachine,
+                value: "vm-1".into(),
+            },
+        });
+        let d = decode_main_object(&e);
+        assert_eq!(d.type_label, "VM");
+        assert_eq!(d.id, "vm-1");
+        assert_eq!(d.name.as_deref(), Some("folder/vm-1"));
+    }
+
+    #[test]
+    fn decode_main_object_empty_when_no_hints() {
+        let d = decode_main_object(&base_event());
+        assert_eq!(d.type_label, "-");
+        assert_eq!(d.id, "-");
+        assert!(d.name.is_none());
+        assert!(d.moref.is_none());
+    }
+
+    #[test]
+    fn event_to_browser_object_roundtrip_has_key() {
+        let mut e = base_event();
+        e.key = 4242;
+        let o = event_to_browser_object(&e).expect("json object");
+        assert!(o.contains_key("key"));
+    }
+
+    #[test]
+    fn event_browser_metadata_title_and_sanitized_dump_prefix() {
+        let row = EventRow {
+            id: ManagedObjectReference {
+                r#type: MoTypesEnum::Other_("EventRow".into()),
+                value: "event-5".into(),
+            },
+            event: base_event(),
+            event_key: 5,
+            event_type: "Custom Type Name".into(),
+            description: String::new(),
+            created_time: String::new(),
+            main_object_type: String::new(),
+            main_object_id: String::new(),
+            main_object_name: None,
+            main_object_ref: None,
+        };
+        let m = event_browser_metadata(&row);
+        assert_eq!(m.title, "Custom Type Name : 5");
+        assert_eq!(m.dump_prefix, "Custom_Type_Name_5");
+    }
+}

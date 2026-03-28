@@ -173,7 +173,8 @@ mod tests {
 
     #[test]
     fn managed_object_reference_is_leaf() {
-        let json_str = r#"{"_typeName":"ManagedObjectReference","type":"VirtualMachine","value":"vm-42"}"#;
+        let json_str =
+            r#"{"_typeName":"ManagedObjectReference","type":"VirtualMachine","value":"vm-42"}"#;
         let val: Value = json::from_str(json_str).unwrap();
         let item = property_to_tree_item("vm".into(), &val);
         assert!(item.children().is_empty());
@@ -200,10 +201,7 @@ mod tests {
     fn get_type_name_reads_typename_field() {
         let mut m = Object::new();
         m.insert("_typeName".into(), Value::String("VirtualMachine".into()));
-        assert_eq!(
-            get_type_name(&m).as_deref(),
-            Some("VirtualMachine")
-        );
+        assert_eq!(get_type_name(&m).as_deref(), Some("VirtualMachine"));
     }
 
     #[test]
