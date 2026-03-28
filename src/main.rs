@@ -4,11 +4,11 @@ use app::App;
 use log::{LevelFilter, info};
 use simplelog::{Config, WriteLogger};
 use std::cell::RefCell;
+use std::env;
 use std::fs::File;
 use std::path::Path;
 use std::rc::Rc;
-use std::{env, sync::Arc};
-use vim_rs::core::client::{Client, ClientBuilder, TransportMode};
+use vim_rs::core::client::{ClientBuilder, TransportMode, VimClientHandle};
 use vim_rs::core::pc_cache::CacheManager;
 
 mod app;
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
     app_result
 }
 
-async fn init_vim_client() -> Result<Arc<Client>> {
+async fn init_vim_client() -> Result<VimClientHandle> {
     let vc_server = env::var("VIM_SERVER").with_context(|| "VIM_SERVER env var not set")?;
     let username = env::var("VIM_USERNAME").with_context(|| "VIM_USERNAME env var not set")?;
     let pwd = env::var("VIM_PASSWORD").with_context(|| "VIM_PASSWORD env var not set")?;

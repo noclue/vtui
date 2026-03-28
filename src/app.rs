@@ -19,8 +19,7 @@ use ratatui::text::Line;
 use ratatui::{DefaultTerminal, Frame};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use vim_rs::core::client::{Client, Transport, VimClient};
+use vim_rs::core::client::{Transport, VimClientHandle};
 use vim_rs::core::pc_cache::CacheManager;
 
 /// Main application object.
@@ -30,7 +29,7 @@ pub struct App {
     /// Cache manager for managing object caches.
     cache_mgr: Rc<RefCell<CacheManager>>,
     /// Client for interacting with the vSphere API.
-    client: Arc<Client>,
+    client: VimClientHandle,
     /// Body pane.
     body_pane: BodyPane,
     /// Event dispatcher for processing events.
@@ -59,7 +58,7 @@ impl App {
     pub async fn new(
         events: EventHandler,
         cache_mgr: Rc<RefCell<CacheManager>>,
-        client: Arc<Client>,
+        client: VimClientHandle,
     ) -> anyhow::Result<Self> {
         // Create a new ResourceManager instance
         let resource_mgr = ResourceManager::new(

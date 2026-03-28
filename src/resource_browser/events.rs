@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use vim_rs::core::client::Client;
+use vim_rs::core::client::VimClientHandle;
 use vim_rs::core::error::Result as VimResult;
 use vim_rs::core::pc_cache::{Cache, CacheManager, ReadWriteCacheProxy};
 use vim_rs::mo::{EventHistoryCollector, EventManager};
@@ -596,7 +596,7 @@ fn base_event_filter(entity: Option<EventFilterSpecByEntity>) -> EventFilterSpec
 
 #[allow(clippy::await_holding_refcell_ref)]
 async fn create_event_table(
-    client: Arc<Client>,
+    client: VimClientHandle,
     cache_mgr: Rc<RefCell<CacheManager>>,
     filter: EventFilterSpec,
 ) -> anyhow::Result<(
@@ -654,7 +654,7 @@ async fn create_event_table(
 }
 
 pub async fn create_global_event_view(
-    client: Arc<Client>,
+    client: VimClientHandle,
     cache_mgr: Rc<RefCell<CacheManager>>,
 ) -> anyhow::Result<(
     Box<dyn TableDataSource>,
@@ -670,7 +670,7 @@ pub async fn create_global_event_view(
 }
 
 pub async fn create_entity_event_view(
-    client: Arc<Client>,
+    client: VimClientHandle,
     cache_mgr: Rc<RefCell<CacheManager>>,
     entity: &ManagedObjectReference,
 ) -> anyhow::Result<(
