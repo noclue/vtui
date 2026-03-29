@@ -4,4 +4,5 @@ mod json_to_tree;
 mod prop_mgr;
 mod prop_utils;
 
-pub use prop_mgr::{HistoryRecord, PropertyBrowserManager};
+pub use browser::BrowserMetadata;
+pub use prop_mgr::{PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager};

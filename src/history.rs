@@ -1,4 +1,4 @@
-use crate::prop_browser::HistoryRecord as PropertyEntry;
+use crate::prop_browser::PropertyHistoryRecord as PropertyEntry;
 use crate::resource_browser::HistoryRecord as ResourceEntry;
 use std::collections::VecDeque;
 

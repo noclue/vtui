@@ -2,7 +2,8 @@ use crate::resource_browser::formatting;
 use crate::resource_browser::formatting::{
     ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, status_color,
 };
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_browser::perf::PerfRowsSnapshot;
+use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style};
@@ -66,6 +67,12 @@ impl From<&DatastoreDetails> for Row<'_> {
             vms,
             hosts,
         ])
+    }
+}
+
+impl InventoryRowBuilder for DatastoreDetails {
+    fn inventory_row(&self, _perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+        Row::from(self)
     }
 }
 

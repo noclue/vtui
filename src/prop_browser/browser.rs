@@ -12,6 +12,7 @@ use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, ScrollbarOrientation, StatefulWidget};
+use std::borrow::Cow;
 use std::io::Write;
 use std::mem;
 use std::path::PathBuf;
@@ -21,9 +22,26 @@ use vim_rs::core::pc_helpers::Error;
 use vim_rs::types::enums::{ObjectUpdateKindEnum, PropertyChangeOpEnum};
 use vim_rs::types::structs::{ManagedObjectReference, ObjectUpdate, PropertyChange, PropertySpec};
 
+/// Title line and JSON dump filename stem (see `PropertyBrowserState::generate_json_filename`).
+#[derive(Debug, Clone)]
+pub struct BrowserMetadata {
+    pub title: String,
+    pub dump_prefix: String,
+}
+
+impl BrowserMetadata {
+    pub fn for_managed_object(obj: &ManagedObjectReference) -> Self {
+        Self {
+            title: String::new(),
+            dump_prefix: format!("{}_{}", obj.r#type.as_str(), obj.value),
+        }
+    }
+}
+
 pub struct PropertyBrowserState {
-    /// PropertyCollector filter for the current view
-    obj: ManagedObjectReference,
+    /// When `Some`, this view is backed by PropertyCollector for that managed object.
+    obj: Option<ManagedObjectReference>,
+    metadata: BrowserMetadata,
     /// Properties of the current view.
     properties: IndexMap<String, Value>,
     /// Data source for the tree view.
@@ -37,13 +55,57 @@ impl PropertyBrowserState {
         obj: ManagedObjectReference,
         tree_state: Option<TreeState<String>>,
     ) -> anyhow::Result<Self> {
-        let res = Self {
-            obj,
+        let metadata = BrowserMetadata::for_managed_object(&obj);
+        Ok(Self {
+            obj: Some(obj),
+            metadata,
             properties: IndexMap::new(),
             items: Vec::new(),
             state: tree_state.unwrap_or_default(),
+        })
+    }
+
+    /// Static snapshot (e.g. event data object): no PropertyCollector, no managed-object `obj`.
+    pub fn from_static_json(
+        metadata: BrowserMetadata,
+        root: Object,
+        tree_state: Option<TreeState<String>>,
+    ) -> anyhow::Result<Self> {
+        let mut s = Self {
+            obj: None,
+            metadata: BrowserMetadata {
+                title: String::new(),
+                dump_prefix: String::new(),
+            },
+            properties: IndexMap::new(),
+            items: Vec::new(),
+            state: TreeState::default(),
         };
-        Ok(res)
+        let _ = s.load_json_root(metadata, None, root, tree_state);
+        Ok(s)
+    }
+
+    /// Replace content from a JSON object (top-level keys become tree roots, like PC properties).
+    pub fn load_json_root(
+        &mut self,
+        metadata: BrowserMetadata,
+        obj: Option<ManagedObjectReference>,
+        root: Object,
+        new_tree_state: Option<TreeState<String>>,
+    ) -> TreeState<String> {
+        self.metadata = metadata;
+        self.obj = obj;
+        self.properties = root.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        self.items = self
+            .properties
+            .iter()
+            .map(|(k, v)| property_to_tree_item(k.clone(), v))
+            .collect();
+        let prev = self.replace_tree_state(new_tree_state);
+        if self.state.selected().is_empty() && !self.items.is_empty() {
+            self.state = self.clean_state();
+        }
+        prev
     }
 
     pub fn set_obj(
@@ -51,7 +113,8 @@ impl PropertyBrowserState {
         obj: ManagedObjectReference,
         new_tree_state: Option<TreeState<String>>,
     ) -> anyhow::Result<TreeState<String>> {
-        self.obj = obj;
+        self.obj = Some(obj.clone());
+        self.metadata = BrowserMetadata::for_managed_object(&obj);
         self.items = Vec::new();
         self.properties = IndexMap::new();
         Ok(self.replace_tree_state(new_tree_state))
@@ -226,6 +289,15 @@ impl PropertyBrowserState {
         }
     }
 
+    pub fn static_history_snapshot(&self) -> (BrowserMetadata, Object) {
+        let root: Object = self
+            .properties
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        (self.metadata.clone(), root)
+    }
+
     pub fn dump_to_json(&self) -> anyhow::Result<()> {
         // Convert IndexMap to miniserde Object for serialization
         let obj: Object = self
@@ -247,40 +319,30 @@ impl PropertyBrowserState {
     }
 
     fn generate_json_filename(&self) -> anyhow::Result<String> {
-        // Get object name if available
         let name_prefix = self
             .get_object_name()
-            .map(|name| {
-                // Replace characters that aren't suitable for filenames
-                name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
-            })
+            .map(|name| name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_"))
             .unwrap_or_default();
 
-        // Get object type and ID
-        let object_type: &str = self.obj.r#type.as_str();
-        let object_id = &self.obj.value;
+        let type_id_part: Cow<'_, str> = if let Some(ref obj) = self.obj {
+            format!("{}_{}", obj.r#type.as_str(), obj.value).into()
+        } else {
+            self.metadata.dump_prefix.as_str().into()
+        };
+        let type_id_part =
+            type_id_part.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
 
-        // Get current datetime in RFC 3339 format
         let timestamp = Local::now()
             .to_rfc3339_opts(SecondsFormat::Secs, true)
-            .replace([':', '-'], ""); // Remove characters not suitable for filenames
+            .replace([':', '-'], "");
 
-        // Build filename
         let mut filename = String::new();
-
-        // Add name prefix if available
         if !name_prefix.is_empty() {
             filename.push_str(&name_prefix);
             filename.push('_');
         }
-
-        // Add object type and ID
-        filename.push_str(object_type);
+        filename.push_str(&type_id_part);
         filename.push('_');
-        filename.push_str(object_id);
-        filename.push('_');
-
-        // Add timestamp and extension
         filename.push_str(&timestamp);
         filename.push_str(".json");
 
@@ -290,7 +352,12 @@ impl PropertyBrowserState {
 
 impl Cache for PropertyBrowserState {
     fn prop_spec(&self) -> vim_rs::core::pc_helpers::Result<PropertySpec> {
-        let s = self.obj.r#type.as_str();
+        let Some(obj) = self.obj.as_ref() else {
+            return Err(vim_rs::core::pc_helpers::Error::internal(
+                "static property view is not attached to PropertyCollector".into(),
+            ));
+        };
+        let s = obj.r#type.as_str();
         Ok(PropertySpec {
             r#type: s.to_string(),
             all: Some(true),
@@ -302,11 +369,15 @@ impl Cache for PropertyBrowserState {
         &mut self,
         update: Vec<ObjectUpdate>,
     ) -> vim_rs::core::pc_helpers::Result<()> {
+        if self.obj.is_none() {
+            return Ok(());
+        }
         if update.is_empty() {
             return Ok(());
         };
+        let self_value = self.obj.as_ref().expect("checked").value.clone();
         for update in update {
-            if update.obj.value == self.obj.value {
+            if update.obj.value == self_value {
                 match update.kind {
                     ObjectUpdateKindEnum::Enter | ObjectUpdateKindEnum::Modify => {
                         let Some(changes) = update.change_set else {
@@ -443,27 +514,28 @@ impl StatefulWidget for PropertyBrowser<'_> {
     type State = PropertyBrowserState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let object_type = state.obj.r#type.as_str();
-        let object_id = &state.obj.value;
-
-        let mut spans = Vec::new();
-
-        // Add name if available
-        if let Some(name) = state.get_object_name() {
-            spans.push(Span::styled(name, Style::default().fg(Color::White)));
-            spans.push(Span::raw(" "));
-        }
-
-        // Add ID in brackets
-        spans.extend_from_slice(&[
-            Span::styled("[", Style::default().fg(Color::DarkGray)),
-            Span::styled(object_type, Style::default().fg(Color::Cyan)),
-            Span::styled(": ", Style::default().fg(Color::DarkGray)),
-            Span::styled(object_id, Style::default().fg(Color::Cyan)),
-            Span::styled("]", Style::default().fg(Color::DarkGray)),
-        ]);
-
-        let title = Line::from(spans);
+        let title = if let Some(obj) = state.obj.as_ref() {
+            let object_type = obj.r#type.as_str();
+            let object_id = &obj.value;
+            let mut spans = Vec::new();
+            if let Some(name) = state.get_object_name() {
+                spans.push(Span::styled(name, Style::default().fg(Color::White)));
+                spans.push(Span::raw(" "));
+            }
+            spans.extend_from_slice(&[
+                Span::styled("[", Style::default().fg(Color::DarkGray)),
+                Span::styled(object_type, Style::default().fg(Color::Cyan)),
+                Span::styled(": ", Style::default().fg(Color::DarkGray)),
+                Span::styled(object_id, Style::default().fg(Color::Cyan)),
+                Span::styled("]", Style::default().fg(Color::DarkGray)),
+            ]);
+            Line::from(spans)
+        } else {
+            Line::from(vec![Span::styled(
+                state.metadata.title.as_str(),
+                Style::default().fg(Color::Cyan),
+            )])
+        };
 
         let mut widget = Tree::new(&state.items)
             .expect("all item identifiers are unique")
@@ -471,13 +543,18 @@ impl StatefulWidget for PropertyBrowser<'_> {
                 Block::bordered()
                     .title(title)
                     .title_alignment(Alignment::Center)
-                    .title_bottom(Line::from(vec![
-                        Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            env!("CARGO_PKG_VERSION"),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ]))
+                    .title_bottom(
+                        Line::from(vec![
+                            Span::raw(" "),
+                            Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(
+                                env!("CARGO_PKG_VERSION"),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                            Span::raw(" "),
+                        ])
+                        .alignment(Alignment::Left),
+                    )
                     .title_bottom(
                         Line::styled(
                             "→ - expand, ← - collapse, ↑↓ - scroll",

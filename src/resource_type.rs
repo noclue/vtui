@@ -15,6 +15,7 @@ pub enum ResourceType {
     // Folder,
     // ResourcePool,
     Task,
+    Event,
 }
 
 impl std::fmt::Display for ResourceType {
@@ -28,6 +29,7 @@ impl std::fmt::Display for ResourceType {
             // ResourceType::Folder => write!(f, "Folder"),
             // ResourceType::ResourcePool => write!(f, "Resource Pool"),
             ResourceType::Task => write!(f, "Task"),
+            ResourceType::Event => write!(f, "Event"),
         }
     }
 }
@@ -51,6 +53,7 @@ impl ResourceSelectionState {
                 // ResourceType::Folder,
                 // ResourceType::ResourcePool,
                 ResourceType::Task,
+                ResourceType::Event,
             ],
             selected_index: 0,
         }

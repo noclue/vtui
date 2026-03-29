@@ -1,5 +1,6 @@
 use crate::resource_browser::formatting::{STATUS, STATUS_COLUMN_WIDTH, status_color};
-use crate::resource_browser::tabular_data::{SortFn, TabularData};
+use crate::resource_browser::perf::PerfRowsSnapshot;
+use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::text::Span;
@@ -38,6 +39,12 @@ impl From<&NetworkDetails> for Row<'_> {
             vms,
             hosts,
         ])
+    }
+}
+
+impl InventoryRowBuilder for NetworkDetails {
+    fn inventory_row(&self, _perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+        Row::from(self)
     }
 }
 

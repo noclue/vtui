@@ -1,4 +1,5 @@
-use crate::resource_browser::tabular_data::{TableDataSource, TabularData};
+use crate::resource_browser::perf::PerfSnapshotShare;
+use crate::resource_browser::tabular_data::{InventoryRowBuilder, TableDataSource, TabularData};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::widgets::Row;
@@ -16,26 +17,25 @@ use vim_rs::types::structs::ManagedObjectReference;
 /// filtering and sorting without needing to copy the data.
 ///
 /// The struct is generic over the type T, which must implement the Cacheable and TabularData traits.
-/// It also requires that the error type of T is BoxableError, and that the Ratatui Row type can be
-/// constructed from a reference to T.
+/// It also requires that the error type of T is BoxableError, and that rows are built via
+/// [`InventoryRowBuilder`].
 pub struct IndexedCache<T>
 where
-    T: Cacheable + TabularData,
+    T: Cacheable + TabularData + InventoryRowBuilder,
     T::Error: BoxableError,
-    for<'a> Row<'static>: From<&'a T>,
 {
     cache: Arc<RwLock<ObjectCache<T>>>,
     indices: Option<Vec<usize>>, // Filtered/sorted indices into original cache
     filter: Option<String>,      // Current filter criteria
     sort_column: Option<usize>,  // Current sort column
     sort_descending: bool,       // Sort direction
+    perf: Option<PerfSnapshotShare>,
 }
 
 impl<T> IndexedCache<T>
 where
-    T: Cacheable + TabularData,
+    T: Cacheable + TabularData + InventoryRowBuilder,
     T::Error: BoxableError,
-    for<'a> Row<'static>: From<&'a T>,
 {
     pub fn new(cache: Arc<RwLock<ObjectCache<T>>>) -> Self {
         IndexedCache {
@@ -44,8 +44,10 @@ where
             filter: None,
             sort_column: None,
             sort_descending: false,
+            perf: None,
         }
     }
+
     fn ensure_indices_updated(&mut self) {
         if self.indices.is_none() {
             self.update_indices();
@@ -74,9 +76,8 @@ where
 
 impl<T> TableDataSource for IndexedCache<T>
 where
-    T: Cacheable + TabularData,
+    T: Cacheable + TabularData + InventoryRowBuilder,
     T::Error: BoxableError,
-    for<'a> Row<'static>: From<&'a T>,
 {
     fn get_title(&self) -> &'static str {
         T::get_title()
@@ -124,11 +125,17 @@ where
             panic!("Internal error: No indices found after ensuring indices updated");
         };
 
+        let perf_rows = self
+            .perf
+            .as_ref()
+            .and_then(|p| p.read().ok())
+            .map(|g| g.clone());
+
         let cache = self.cache.clone();
         Box::new(indices.iter().map(move |idx| {
             let cache = cache.read().expect("ObjectCache lock poisoned");
             let item = &cache[*idx];
-            Row::from(item)
+            T::inventory_row(item, perf_rows.as_ref())
         }))
     }
 
@@ -182,5 +189,9 @@ where
 
     fn resource_type(&self) -> ResourceType {
         T::resource_type()
+    }
+
+    fn set_perf_snapshot(&mut self, perf: Option<PerfSnapshotShare>) {
+        self.perf = perf;
     }
 }

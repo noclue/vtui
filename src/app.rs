@@ -2,8 +2,11 @@ use crate::body_pane::BodyPane;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
-use crate::prop_browser::PropertyBrowserManager;
+use crate::prop_browser::{
+    BrowserMetadata, PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager,
+};
 use crate::resource_browser::ResourceManager;
+use crate::resource_browser::event_to_browser_object;
 use crate::resource_type::{ResourceSelectionState, ResourceType};
 use crate::search::SearchState;
 use crate::vm_action_ui::{self, VmActionKeyOutcome, VmActionUi};
@@ -17,7 +20,7 @@ use ratatui::{DefaultTerminal, Frame};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::{Client, Transport, VimClient};
 use vim_rs::core::pc_cache::CacheManager;
 
 /// Main application object.
@@ -69,7 +72,7 @@ impl App {
             should_quit: false,
             cache_mgr,
             client,
-            body_pane: BodyPane::ResourceBrowser(resource_mgr),
+            body_pane: BodyPane::ResourceBrowser(Box::new(resource_mgr)),
             events,
             search_state: SearchState::new(),
             resource_selection_state: ResourceSelectionState::new(),
@@ -85,7 +88,7 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             match self.events.next().await? {
                 Event::Crossterm(event) => self.handle_terminal_event(&event).await?,
-                Event::App(app_event) => self.handle_app_event(app_event).await?,
+                Event::App(app_event) => self.handle_app_event(*app_event).await?,
             }
             if self.pending_redraw {
                 terminal.draw(|frame| self.draw(frame))?;
@@ -117,7 +120,9 @@ impl App {
                 debug!("SearchCompleted. filter: {:?}", filter);
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.set_filter(Some(filter));
+                    resource_mgr.refresh_perf_visible().await;
                 }
+                self.pending_redraw = true;
             }
             AppEvent::OpenResourceSelection => self.resource_selection_state.activate(),
             AppEvent::ResourceSelected(resource_type) => {
@@ -136,7 +141,17 @@ impl App {
                             resource_type,
                         )
                         .await?;
-                        self.body_pane = BodyPane::ResourceBrowser(res_mgr);
+                        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
+                    }
+                    BodyPane::StaticPropertyBrowser(static_mgr) => {
+                        static_mgr.save_state(&mut self.events);
+                        let res_mgr = ResourceManager::new(
+                            self.client.clone(),
+                            self.cache_mgr.clone(),
+                            resource_type,
+                        )
+                        .await?;
+                        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
                     }
                 }
             }
@@ -158,11 +173,29 @@ impl App {
                     PropertyBrowserManager::new(self.cache_mgr.clone(), moref).await?,
                 )
             }
+            AppEvent::LoadEventProperties(payload) => {
+                let payload = *payload;
+                info!("LoadEventProperties. title: {}", payload.title);
+                let metadata = BrowserMetadata {
+                    title: payload.title,
+                    dump_prefix: payload.dump_prefix,
+                };
+                let root = event_to_browser_object(&payload.event)?;
+                self.body_pane = BodyPane::StaticPropertyBrowser(
+                    StaticPropertyBrowserManager::new(metadata, root)?,
+                );
+            }
             AppEvent::ResourceManagerHistory(history) => {
                 self.history.add_resource_entry(history);
             }
             AppEvent::PropertyManagerHistory(history) => {
                 self.history.add_property_entry(history);
+            }
+            AppEvent::PerfTick => {
+                if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
+                    resource_mgr.refresh_perf_visible().await;
+                }
+                self.pending_redraw = true;
             }
         }
         Ok(())
@@ -190,10 +223,17 @@ impl App {
             res.push(Line::from(vec!["vSphere UUID: ".yellow(), "N/A".gray()]));
         }
 
-        // 3. Used API version
+        // 3. Used API version and wire format (JSON vs SOAP)
+        let wire = match self.client.transport() {
+            Transport::Json => "JSON",
+            Transport::Soap => "SOAP",
+        };
         res.push(Line::from(vec![
             "API Version: ".yellow(),
             self.client.api_release().gray(),
+            " (".gray(),
+            wire.gray(),
+            ")".gray(),
         ]));
 
         res
@@ -328,30 +368,48 @@ impl App {
                     BodyPane::ResourceBrowser(ref mut resource_mgr) => {
                         resource_mgr.load_history_record(record).await?;
                     }
-                    BodyPane::PropertyBrowser(_) => {
-                        self.body_pane = BodyPane::ResourceBrowser(
+                    BodyPane::PropertyBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
+                        self.body_pane = BodyPane::ResourceBrowser(Box::new(
                             ResourceManager::from_history_record(
                                 record,
                                 self.client.clone(),
                                 self.cache_mgr.clone(),
                             )
                             .await?,
-                        );
+                        ));
                     }
                 },
-                History::Property(record) => match self.body_pane {
-                    BodyPane::ResourceBrowser(_) => {
-                        self.body_pane = BodyPane::PropertyBrowser(
-                            PropertyBrowserManager::from_history_record(
-                                record,
-                                self.cache_mgr.clone(),
-                            )
-                            .await?,
-                        );
-                    }
-                    BodyPane::PropertyBrowser(ref mut property_mgr) => {
-                        property_mgr.load_history_record(record).await?;
-                    }
+                History::Property(record) => match record {
+                    PropertyHistoryRecord::Managed { obj, state } => match &mut self.body_pane {
+                        BodyPane::ResourceBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
+                            self.body_pane = BodyPane::PropertyBrowser(
+                                PropertyBrowserManager::from_history_record(
+                                    PropertyHistoryRecord::Managed { obj, state },
+                                    self.cache_mgr.clone(),
+                                )
+                                .await?,
+                            );
+                        }
+                        BodyPane::PropertyBrowser(property_mgr) => {
+                            property_mgr
+                                .load_history_record(PropertyHistoryRecord::Managed { obj, state })
+                                .await?;
+                        }
+                    },
+                    PropertyHistoryRecord::Static {
+                        metadata,
+                        root,
+                        state,
+                    } => match &mut self.body_pane {
+                        BodyPane::ResourceBrowser(_) | BodyPane::PropertyBrowser(_) => {
+                            self.body_pane = BodyPane::StaticPropertyBrowser(
+                                StaticPropertyBrowserManager::from_history(metadata, root, state)?,
+                            );
+                        }
+                        BodyPane::StaticPropertyBrowser(static_mgr) => {
+                            static_mgr.load_history_record(metadata, root, state)?;
+                        }
+                    },
                 },
             }
         }

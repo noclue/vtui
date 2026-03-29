@@ -1,10 +1,12 @@
-use crate::prop_browser::HistoryRecord as PropertyHistoryRecord;
+use crate::prop_browser::PropertyHistoryRecord;
+use crate::resource_browser::EventBrowserPayload;
 use crate::resource_browser::HistoryRecord as ResourceHistoryRecord;
 use crate::resource_type::ResourceType;
 use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use tokio::sync::mpsc;
+use tokio::time::{self, Duration, MissedTickBehavior};
 use vim_rs::core::pc_cache::Monitor;
 use vim_rs::types::structs::{ManagedObjectReference, PropertyFilterUpdate};
 
@@ -18,7 +20,7 @@ pub enum Event {
     /// Application events.
     ///
     /// Events that are specific to the application.
-    App(AppEvent),
+    App(Box<AppEvent>),
 }
 
 /// Application events.
@@ -44,11 +46,17 @@ pub enum AppEvent {
     /// Load object properties.
     LoadProperties(ManagedObjectReference),
 
+    /// Open a static JSON tree for an event (data object, not a managed object).
+    LoadEventProperties(Box<EventBrowserPayload>),
+
     /// Open VM power-actions flow for the given VM (prefetch path + disabled methods in `App`).
     OpenVmActions(ManagedObjectReference),
 
     ResourceManagerHistory(ResourceHistoryRecord),
     PropertyManagerHistory(PropertyHistoryRecord),
+
+    /// Periodic refresh of VM/Host performance sparklines (~20s).
+    PerfTick,
 }
 
 /// Terminal event handler.
@@ -101,7 +109,7 @@ impl EventHandler {
     pub fn send(&mut self, app_event: AppEvent) {
         // Ignore the result as the reciever cannot be dropped while this struct still has a
         // reference to it
-        let _ = self.sender.send(Event::App(app_event));
+        let _ = self.sender.send(Event::App(Box::new(app_event)));
     }
 
     /// Shuts down the event handler. Safely closes the receiver and waits for the event thread to
@@ -134,10 +142,14 @@ impl EventTask {
     /// This function emits tick events at a fixed rate and polls for crossterm events in between.
     async fn run(&mut self) -> Result<()> {
         let mut reader = crossterm::event::EventStream::new();
+        let start = tokio::time::Instant::now() + Duration::from_secs(20);
+        let mut perf_interval = time::interval_at(start, Duration::from_secs(20));
+        perf_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             // let tick_delay = tick.tick();
             let crossterm_event = reader.next().fuse();
             let updates = self.monitor.wait_updates(100).fuse();
+            let perf_tick = perf_interval.tick().fuse();
             tokio::select! {
                 _ = self.sender.closed() => {
                     break;
@@ -145,20 +157,23 @@ impl EventTask {
                 Some(Ok(evt)) = crossterm_event => {
                     self.send(Event::Crossterm(evt));
                 }
+                _ = perf_tick => {
+                    self.send(Event::App(Box::new(AppEvent::PerfTick)));
+                }
                 updates_result = updates => {
                     match updates_result {
                         Ok(None) => {
                             continue;
                         }
                         Err(e) => {
-                            self.send(Event::App(
-                                AppEvent::ErrorMessage(
-                                    format!("Error waiting for updates: {}", e)
-                                )
-                            ));
+                            self.send(Event::App(Box::new(AppEvent::ErrorMessage(
+                                format!("Error waiting for updates: {}", e),
+                            ))));
                         }
                         Ok(Some(updates)) => {
-                            self.send(Event::App(AppEvent::PropertyCollector(updates)));
+                            self.send(Event::App(Box::new(AppEvent::PropertyCollector(
+                                updates,
+                            ))));
                         }
                     }
                 }

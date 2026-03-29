@@ -1,10 +1,12 @@
+use super::events;
 use crate::event::{AppEvent, EventHandler};
 use crate::resource_browser::cluster::ClusterDetails;
 use crate::resource_browser::data_loaders;
 use crate::resource_browser::datastore::{DatastoreDetails, get_datastore_hosts};
-use crate::resource_browser::hints::{HELP_HINTS, get_expand_hint};
+use crate::resource_browser::hints::{HELP_HINTS, HELP_HINTS_EVENTS, get_expand_hint};
 use crate::resource_browser::host::Host;
 use crate::resource_browser::network::NetworkDetails;
+use crate::resource_browser::perf::{PerfPollerState, PerfSnapshotShare, new_perf_snapshot_share};
 use crate::resource_browser::resource_table::ResourceTableWidget;
 use crate::resource_browser::tabular_data::TableDataSource;
 use crate::resource_browser::task::{TaskInfo, ensure_task_descriptions_initialized};
@@ -21,8 +23,16 @@ use std::rc::Rc;
 use std::sync::Arc;
 use vim_rs::core::client::Client;
 use vim_rs::core::pc_cache::CacheManager;
+use vim_rs::mo::EventHistoryCollector;
 use vim_rs::types::enums::MoTypesEnum;
 use vim_rs::types::structs::ManagedObjectReference;
+
+/// Extra teardown beyond removing the PropertyCollector filter (e.g. session event collectors).
+#[derive(Debug)]
+pub(crate) enum ResourceCleanup {
+    None,
+    EventCollector(ManagedObjectReference),
+}
 
 pub struct ResourceManager {
     /// Cache manager for managing object caches.
@@ -39,6 +49,13 @@ pub struct ResourceManager {
     parent: Option<(ManagedObjectReference, String)>,
     /// Table state to apply after data is loaded.
     pending_table_state: Option<(usize, Option<usize>)>, // (offset, selected_index)
+    /// Session objects that must be destroyed when leaving this table source.
+    source_cleanup: ResourceCleanup,
+    /// Live CPU/mem % samples for VM/Host sparklines (visible rows).
+    perf_snapshot: PerfSnapshotShare,
+    perf_poller: Option<PerfPollerState>,
+    /// Inner height of the table block last render (`body_area.height - 2`); used for visible-row perf queries.
+    last_table_inner_height: u16,
 }
 
 #[derive(Debug)]
@@ -81,10 +98,11 @@ impl ResourceManager {
             "Creating resource manager for resource type: {}",
             resource_type
         );
-        let (resources, filter) =
+        let (resources, filter, source_cleanup) =
             Self::load_from_container(resource_type, cache_mgr.clone(), &client).await?;
 
-        Ok(Self {
+        let perf_snapshot = new_perf_snapshot_share();
+        let mut mgr = Self {
             cache_mgr,
             client,
             resources,
@@ -92,7 +110,13 @@ impl ResourceManager {
             table_state: TableState::default(),
             parent: None,
             pending_table_state: None,
-        })
+            source_cleanup,
+            perf_snapshot,
+            perf_poller: None,
+            last_table_inner_height: 0,
+        };
+        mgr.refresh_perf_visible().await;
+        Ok(mgr)
     }
 
     pub async fn from_history_record(
@@ -104,7 +128,7 @@ impl ResourceManager {
             "Creating resource manager from history record. Resource type: {}",
             record.resource_type
         );
-        let (mut resources, filter) = if let Some(ref parent) = record.parent {
+        let (mut resources, filter, source_cleanup) = if let Some(ref parent) = record.parent {
             Self::load_parent_collection(
                 record.resource_type,
                 &parent.0,
@@ -127,7 +151,8 @@ impl ResourceManager {
         // Make sure the data reflects our settings
         resources.invalidate();
 
-        Ok(Self {
+        let perf_snapshot = new_perf_snapshot_share();
+        let mut mgr = Self {
             cache_mgr,
             client,
             resources,
@@ -135,7 +160,13 @@ impl ResourceManager {
             table_state: TableState::default(),
             parent: record.parent,
             pending_table_state: Some((record.offset, record.selected_index)),
-        })
+            source_cleanup,
+            perf_snapshot,
+            perf_poller: None,
+            last_table_inner_height: 0,
+        };
+        mgr.refresh_perf_visible().await;
+        Ok(mgr)
     }
 
     pub async fn load_history_record(
@@ -162,6 +193,7 @@ impl ResourceManager {
         }
         self.resources.invalidate();
 
+        self.refresh_perf_visible().await;
         Ok(())
     }
     pub fn save_state(&mut self, events: &mut EventHandler) {
@@ -187,8 +219,70 @@ impl ResourceManager {
     }
 
     pub fn render(&mut self, frame: &mut Frame, body_area: Rect) {
+        self.last_table_inner_height = body_area.height.saturating_sub(2);
+        if matches!(
+            self.resource_type(),
+            ResourceType::VirtualMachine | ResourceType::Host
+        ) {
+            self.resources
+                .set_perf_snapshot(Some(self.perf_snapshot.clone()));
+        } else {
+            self.resources.set_perf_snapshot(None);
+        }
         let table = ResourceTableWidget::new(self.resources.as_mut(), &self.parent);
         frame.render_stateful_widget(table, body_area, &mut self.table_state);
+    }
+
+    /// Refresh performance samples for currently visible VM/Host rows (best-effort).
+    pub async fn refresh_perf_visible(&mut self) {
+        if !matches!(
+            self.resource_type(),
+            ResourceType::VirtualMachine | ResourceType::Host
+        ) {
+            return;
+        }
+        let refs = self.visible_managed_object_refs();
+        if refs.is_empty() {
+            return;
+        }
+        if self.perf_poller.is_none() {
+            match PerfPollerState::new(self.client.clone()) {
+                Ok(p) => self.perf_poller = Some(p),
+                Err(e) => {
+                    warn!("PerformanceManager init failed: {}", e);
+                    return;
+                }
+            }
+        }
+        let Some(poller) = self.perf_poller.as_mut() else {
+            return;
+        };
+        if let Err(e) = poller.poll_entities(&refs, &self.perf_snapshot).await {
+            warn!("perf query failed: {}", e);
+        }
+    }
+
+    fn visible_managed_object_refs(&mut self) -> Vec<ManagedObjectReference> {
+        let n = self.resources.len();
+        if n == 0 {
+            return vec![];
+        }
+        let visible_rows = if self.last_table_inner_height > 2 {
+            (self.last_table_inner_height as usize)
+                .saturating_sub(1)
+                .max(1)
+        } else {
+            n.min(64)
+        };
+        let offset = self.table_state.offset().min(n.saturating_sub(1));
+        let end = (offset + visible_rows).min(n);
+        let mut out = Vec::new();
+        for i in offset..end {
+            if let Some((m, _)) = self.resources.item_at_index(i) {
+                out.push(m);
+            }
+        }
+        out
     }
 
     pub async fn handle_key(
@@ -223,6 +317,7 @@ impl ResourceManager {
             }
             //KeyCode::Char('c') => self.events.send(AppEvent::ExpandCollection(ResourceType::Cluster)),
             KeyCode::Char('t') => self.expand_collection(ResourceType::Task, events).await?,
+            KeyCode::Char('e') => self.expand_collection(ResourceType::Event, events).await?,
             KeyCode::Char('x') if self.resource_type() == ResourceType::VirtualMachine => {
                 if let Some((vm_ref, _)) = self.selected_item() {
                     events.send(AppEvent::OpenVmActions(vm_ref));
@@ -231,15 +326,23 @@ impl ResourceManager {
             KeyCode::Char('/') => events.send(AppEvent::OpenSearch),
             KeyCode::Esc => self.set_filter(None),
             KeyCode::Enter => {
-                if let Some((selected_id, _)) = self.selected_item() {
+                if self.resource_type() == ResourceType::Event {
+                    if let Some(sel) = self.table_state.selected()
+                        && let Some(payload) = self.resources.take_event_browser_payload_at(sel)
+                    {
+                        self.save_state(events);
+                        events.send(AppEvent::LoadEventProperties(Box::new(payload)));
+                    }
+                } else if let Some((selected_id, _)) = self.selected_item() {
                     self.save_state(events);
-                    events.send(AppEvent::LoadProperties(selected_id))
+                    events.send(AppEvent::LoadProperties(selected_id));
                 }
             }
             _ => {
                 return Ok(false);
             }
         }
+        self.refresh_perf_visible().await;
         Ok(true)
     }
     pub(crate) async fn load_resource_type(
@@ -255,7 +358,12 @@ impl ResourceManager {
     /// Returns hints tuple for the current resource type. First element are the left column hints,
     /// second element are the right column hints.
     pub fn get_hints(&self) -> (&'static [&'static str], &'static [&'static str]) {
-        (get_expand_hint(self.resource_type()), HELP_HINTS)
+        let help = if self.resource_type() == ResourceType::Event {
+            HELP_HINTS_EVENTS
+        } else {
+            HELP_HINTS
+        };
+        (get_expand_hint(self.resource_type()), help)
     }
 
     async fn expand_collection(
@@ -296,8 +404,9 @@ impl ResourceManager {
         let res = Self::load_parent_collection(resource_type, parent_id, cache_mgr, client).await;
 
         match res {
-            Ok((resources, filter)) => {
-                self.apply_new_table_source(resources, filter).await?;
+            Ok((resources, filter, cleanup)) => {
+                self.apply_new_table_source(resources, filter, cleanup)
+                    .await?;
                 self.parent = Some((parent_id.clone(), parent_name));
                 Ok(())
             }
@@ -330,19 +439,26 @@ impl ResourceManager {
         parent_id: &ManagedObjectReference,
         cache_mgr: Rc<RefCell<CacheManager>>,
         client: &Arc<Client>,
-    ) -> anyhow::Result<(Box<dyn TableDataSource>, ManagedObjectReference)> {
+    ) -> anyhow::Result<(
+        Box<dyn TableDataSource>,
+        ManagedObjectReference,
+        ResourceCleanup,
+    )> {
         match resource_type {
             ResourceType::VirtualMachine => match parent_id.r#type {
                 MoTypesEnum::HostSystem
                 | MoTypesEnum::Datastore
                 | MoTypesEnum::Network
                 | MoTypesEnum::DistributedVirtualPortgroup
-                | MoTypesEnum::OpaqueNetwork => Ok(data_loaders::load_from_property::<VmData>(
-                    cache_mgr, parent_id, "vm",
-                )
-                .await?),
+                | MoTypesEnum::OpaqueNetwork => {
+                    data_loaders::load_from_property::<VmData>(cache_mgr, parent_id, "vm")
+                        .await
+                        .map(|(a, b)| (a, b, ResourceCleanup::None))
+                }
                 MoTypesEnum::ClusterComputeResource => {
-                    Ok(data_loaders::load_from_container::<VmData>(cache_mgr, parent_id).await?)
+                    data_loaders::load_from_container::<VmData>(cache_mgr, parent_id)
+                        .await
+                        .map(|(a, b)| (a, b, ResourceCleanup::None))
                 }
                 _ => {
                     let r#type = parent_id.r#type.as_str();
@@ -357,13 +473,16 @@ impl ResourceManager {
                 MoTypesEnum::ClusterComputeResource
                 | MoTypesEnum::Network
                 | MoTypesEnum::DistributedVirtualPortgroup
-                | MoTypesEnum::OpaqueNetwork => Ok(data_loaders::load_from_property::<Host>(
-                    cache_mgr, parent_id, "host",
-                )
-                .await?),
+                | MoTypesEnum::OpaqueNetwork => {
+                    data_loaders::load_from_property::<Host>(cache_mgr, parent_id, "host")
+                        .await
+                        .map(|(a, b)| (a, b, ResourceCleanup::None))
+                }
                 MoTypesEnum::Datastore => {
                     let hosts = get_datastore_hosts(client.clone(), parent_id).await?;
-                    Ok(data_loaders::load_from_list::<Host>(cache_mgr, &hosts).await?)
+                    data_loaders::load_from_list::<Host>(cache_mgr, &hosts)
+                        .await
+                        .map(|(a, b)| (a, b, ResourceCleanup::None))
                 }
                 _ => {
                     let r#type = parent_id.r#type.as_str();
@@ -376,12 +495,13 @@ impl ResourceManager {
             },
             ResourceType::Datastore => match parent_id.r#type {
                 MoTypesEnum::ClusterComputeResource | MoTypesEnum::HostSystem => {
-                    Ok(data_loaders::load_from_property::<DatastoreDetails>(
+                    data_loaders::load_from_property::<DatastoreDetails>(
                         cache_mgr,
                         parent_id,
                         "datastore",
                     )
-                    .await?)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
                 }
                 _ => {
                     let r#type = parent_id.r#type.as_str();
@@ -402,10 +522,11 @@ impl ResourceManager {
             }
             ResourceType::Network => match parent_id.r#type {
                 MoTypesEnum::ClusterComputeResource | MoTypesEnum::HostSystem => {
-                    Ok(data_loaders::load_from_property::<NetworkDetails>(
+                    data_loaders::load_from_property::<NetworkDetails>(
                         cache_mgr, parent_id, "network",
                     )
-                    .await?)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
                 }
                 _ => {
                     let r#type = parent_id.r#type.as_str();
@@ -425,14 +546,13 @@ impl ResourceManager {
                     | MoTypesEnum::Datastore
                     | MoTypesEnum::Network
                     | MoTypesEnum::DistributedVirtualPortgroup
-                    | MoTypesEnum::OpaqueNetwork => {
-                        Ok(data_loaders::load_from_property::<TaskInfo>(
-                            cache_mgr,
-                            parent_id,
-                            "recentTask",
-                        )
-                        .await?)
-                    }
+                    | MoTypesEnum::OpaqueNetwork => data_loaders::load_from_property::<TaskInfo>(
+                        cache_mgr,
+                        parent_id,
+                        "recentTask",
+                    )
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None)),
                     _ => {
                         let r#type = parent_id.r#type.as_str();
                         Err(ResourceError::UnsupportedExpansion {
@@ -443,6 +563,21 @@ impl ResourceManager {
                     }
                 }
             }
+            ResourceType::Event => match parent_id.r#type {
+                MoTypesEnum::VirtualMachine | MoTypesEnum::HostSystem | MoTypesEnum::Datastore => {
+                    events::create_entity_event_view(client.clone(), cache_mgr, parent_id)
+                        .await
+                        .map(|(a, b, c)| (a, b, ResourceCleanup::EventCollector(c)))
+                }
+                _ => {
+                    let r#type = parent_id.r#type.as_str();
+                    Err(ResourceError::UnsupportedExpansion {
+                        resource_type,
+                        parent_type: r#type.to_string(),
+                    }
+                    .into())
+                }
+            },
         }
     }
 
@@ -451,45 +586,60 @@ impl ResourceManager {
         let cache_mgr = self.cache_mgr.clone();
         let client = &self.client;
 
-        let (resources, filter) =
+        let (resources, filter, cleanup) =
             Self::load_from_container(resource_type, cache_mgr, client).await?;
-        self.apply_new_table_source(resources, filter).await
+        self.apply_new_table_source(resources, filter, cleanup)
+            .await
     }
 
     async fn load_from_container(
         resource_type: ResourceType,
         cache_mgr: Rc<RefCell<CacheManager>>,
         client: &Arc<Client>,
-    ) -> anyhow::Result<(Box<dyn TableDataSource>, ManagedObjectReference)> {
+    ) -> anyhow::Result<(
+        Box<dyn TableDataSource>,
+        ManagedObjectReference,
+        ResourceCleanup,
+    )> {
         let parent = client.service_content().root_folder.clone();
-        let (resources, filter) = match resource_type {
+        match resource_type {
             ResourceType::VirtualMachine => {
-                data_loaders::load_from_container::<VmData>(cache_mgr, &parent).await?
+                data_loaders::load_from_container::<VmData>(cache_mgr, &parent)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
             }
-            ResourceType::Host => {
-                data_loaders::load_from_container::<Host>(cache_mgr, &parent).await?
-            }
+            ResourceType::Host => data_loaders::load_from_container::<Host>(cache_mgr, &parent)
+                .await
+                .map(|(a, b)| (a, b, ResourceCleanup::None)),
             ResourceType::Datastore => {
-                data_loaders::load_from_container::<DatastoreDetails>(cache_mgr, &parent).await?
+                data_loaders::load_from_container::<DatastoreDetails>(cache_mgr, &parent)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
             }
             ResourceType::Cluster => {
-                data_loaders::load_from_container::<ClusterDetails>(cache_mgr, &parent).await?
+                data_loaders::load_from_container::<ClusterDetails>(cache_mgr, &parent)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
             }
             ResourceType::Network => {
-                data_loaders::load_from_container::<NetworkDetails>(cache_mgr, &parent).await?
+                data_loaders::load_from_container::<NetworkDetails>(cache_mgr, &parent)
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
             }
             ResourceType::Task => {
                 let task_manager = client.service_content().task_manager.as_ref();
                 let Some(task_manager) = task_manager else {
                     return Err(anyhow!("Task manager not available"));
                 };
-                // Initialize task descriptions
                 ensure_task_descriptions_initialized(client.clone()).await?;
                 data_loaders::load_from_property::<TaskInfo>(cache_mgr, task_manager, "recentTask")
-                    .await?
+                    .await
+                    .map(|(a, b)| (a, b, ResourceCleanup::None))
             }
-        };
-        Ok((resources, filter))
+            ResourceType::Event => events::create_global_event_view(client.clone(), cache_mgr)
+                .await
+                .map(|(a, b, c)| (a, b, ResourceCleanup::EventCollector(c))),
+        }
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
@@ -497,14 +647,30 @@ impl ResourceManager {
         &mut self,
         resources: Box<dyn TableDataSource>,
         filter: ManagedObjectReference,
+        new_cleanup: ResourceCleanup,
     ) -> anyhow::Result<()> {
+        let old_cleanup = std::mem::replace(&mut self.source_cleanup, new_cleanup);
         self.cache_mgr
             .borrow_mut()
             .remove_cache(&self.filter)
             .await?;
+        if let ResourceCleanup::EventCollector(moref) = old_cleanup {
+            let ec = EventHistoryCollector::new(self.client.clone(), &moref.value);
+            ec.destroy_collector()
+                .await
+                .map_err(|e| anyhow!("destroy event collector: {e}"))?;
+        }
         self.table_state = TableState::default();
         self.resources = resources;
         self.filter = filter;
+        if !matches!(
+            self.resources.resource_type(),
+            ResourceType::VirtualMachine | ResourceType::Host
+        ) && let Ok(mut g) = self.perf_snapshot.write()
+        {
+            g.clear();
+        }
+        self.refresh_perf_visible().await;
         Ok(())
     }
 }
@@ -513,7 +679,8 @@ impl Drop for ResourceManager {
     fn drop(&mut self) {
         let cache_mgr = self.cache_mgr.clone();
         let filter = self.filter.clone();
-        // Schedule task to remove the cache
+        let client = self.client.clone();
+        let cleanup = std::mem::replace(&mut self.source_cleanup, ResourceCleanup::None);
         tokio::task::block_in_place(|| {
             #[allow(clippy::await_holding_refcell_ref)]
             tokio::runtime::Handle::current().block_on(async move {
@@ -528,6 +695,12 @@ impl Drop for ResourceManager {
                             filter, e
                         );
                     });
+                if let ResourceCleanup::EventCollector(moref) = cleanup {
+                    let ec = EventHistoryCollector::new(client, &moref.value);
+                    if let Err(e) = ec.destroy_collector().await {
+                        warn!("Failed to destroy event collector {:?}: {}", moref, e);
+                    }
+                }
             });
         });
     }

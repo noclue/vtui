@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-03-29
+
+### Added
+
+- **Events** resource view: open from supported parents with `e` (hosts, datastores, VMs; shown in the footer when available). Live table backed by `EventHistoryCollector` and PropertyCollector; **Enter** opens a **static property browser** for the event data object (JSON tree, not a managed-object PropertyCollector view), with history and **Backspace** integration.
+- **CPU and memory performance sparklines** on Virtual Machine and Host inventory tables: samples from PerformanceManager (`cpu.usage`, `mem.usage`), six points per visible row, 0–10000 (hundredths-of-percent) scale; capacity columns show vCPU count / configured memory (MiB) for VMs and hardware totals for hosts. Refreshes on a ~20s timer and when search or resource context changes.
+- About / connection line shows the active wire format next to the API version: **JSON** or **SOAP**.
+
+### Changed
+
+- Host table layout and version label alignment in resource and property browsers (footer spacing, left-aligned version strip).
+- Clippy and rustfmt cleanups.
+
+## [0.2.2] - 2026-03-23
+
 ### Added
 
 - VM power actions from the Virtual Machine resource view: press `x` to open actions (Power On, Shutdown Guest, Hard Power Off, Guest Reboot, Hard Reset, Suspend). Actions are hidden when listed in `VirtualMachine.disabledMethod`.

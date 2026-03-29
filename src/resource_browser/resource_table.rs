@@ -1,6 +1,6 @@
 use crate::resource_browser::tabular_data::TableDataSource;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Margin, Rect};
+use ratatui::layout::{Alignment, Margin, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
@@ -75,13 +75,18 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
 
         let block = Block::bordered()
             .title(title)
-            .title_bottom(Line::from(vec![
-                Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    env!("CARGO_PKG_VERSION"),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]))
+            .title_bottom(
+                Line::from(vec![
+                    Span::raw(" "),
+                    Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        env!("CARGO_PKG_VERSION"),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::raw(" "),
+                ])
+                .alignment(Alignment::Left),
+            )
             .title_bottom(
                 Line::styled("↑↓ - scroll", hint_style)
                     .alignment(ratatui::layout::Alignment::Right),
