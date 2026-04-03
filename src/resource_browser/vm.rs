@@ -1,4 +1,4 @@
-use crate::resource_browser::formatting::{self, format_compact_memory_size};
+use crate::resource_browser::formatting::{self, format_compact_mem_bytes, format_compact_mhz};
 use crate::resource_browser::formatting::{
     ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_byte_size, sparkline_from_perf_samples,
 };
@@ -17,8 +17,6 @@ vim_updatable!(
         name = "name",
         os = "summary.guest.guest_full_name",
         storage = "summary.storage",
-        num_cpu = "summary.config.num_cpu",
-        memory_size_mb = "summary.config.memory_size_mb",
         status = "overall_status",
         power_state = "runtime.power_state",
     }
@@ -58,13 +56,13 @@ impl InventoryRowBuilder for VmData {
         let spark_cpu = sparkline_from_perf_samples(&cpu_slots);
         let spark_mem = sparkline_from_perf_samples(&mem_slots);
 
-        let cap_cpu = self
-            .num_cpu
-            .map(|n| format!("{:>3}c", n))
+        let cap_cpu = perf
+            .and_then(|p| p.latest_cpu_mhz(&self.id))
+            .map(format_compact_mhz)
             .unwrap_or_else(|| "    ".to_string());
-        let cap_mem = self
-            .memory_size_mb
-            .map(|mb| format_compact_memory_size(mb as i64))
+        let cap_mem = perf
+            .and_then(|p| p.latest_mem_bytes(&self.id))
+            .map(format_compact_mem_bytes)
             .unwrap_or_else(|| "    ".to_string());
 
         let host_cpu = Cell::from(format!("{spark_cpu}{cap_cpu}"));
@@ -114,8 +112,8 @@ impl TabularData for VmData {
     }
 
     fn sortable_columns() -> Vec<usize> {
-        // ID, Name, OS, Used Space, CPU and Memory are sortable
-        vec![0, 3, 4, 5, 6, 7]
+        // CPU/Memory (6,7) are not sortable: perf samples exist only for visible rows.
+        vec![0, 3, 4, 5]
     }
 
     fn sort_by_column(column_idx: usize, descending: bool) -> Option<SortFn<Self>> {
@@ -129,8 +127,6 @@ impl TabularData for VmData {
                     .map_or(0, |s| s.committed)
                     .cmp(&b.storage.as_ref().map_or(0, |s| s.committed))
             }),
-            6 => Box::new(|a, b| a.num_cpu.cmp(&b.num_cpu)),
-            7 => Box::new(|a, b| a.memory_size_mb.cmp(&b.memory_size_mb)),
             _ => return None,
         };
         if descending {

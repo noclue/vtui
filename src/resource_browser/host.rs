@@ -1,5 +1,5 @@
 use crate::resource_browser::formatting::{
-    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_compact_metric,
+    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_compact_mem_bytes, format_compact_mhz,
     sparkline_from_perf_samples, status_color,
 };
 use crate::resource_browser::perf::PerfRowsSnapshot;
@@ -17,23 +17,12 @@ vim_updatable!(
         connection_state = "runtime.connection_state",
         name = "name",
         version = "config.product.version",
-        hw_cpu_mhz = "summary.hardware.cpu_mhz",
-        hw_num_cpu_cores = "summary.hardware.num_cpu_cores",
-        hw_memory_size = "summary.hardware.memory_size",
         uptime = "summary.quick_stats.uptime",
         vms = "vm.length",
         networks = "network.length",
         datastores = "datastore.length",
     }
 );
-
-impl Host {
-    fn cpu_capacity_mhz(&self) -> Option<i32> {
-        let mhz = self.hw_cpu_mhz?;
-        let cores = self.hw_num_cpu_cores?;
-        Some(mhz * i32::from(cores))
-    }
-}
 
 impl InventoryRowBuilder for Host {
     fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
@@ -51,13 +40,13 @@ impl InventoryRowBuilder for Host {
         let spark_cpu = sparkline_from_perf_samples(&cpu_slots);
         let spark_mem = sparkline_from_perf_samples(&mem_slots);
 
-        let cap_cpu = self
-            .cpu_capacity_mhz()
-            .map(|mhz| format_compact_metric(mhz as f64))
+        let cap_cpu = perf
+            .and_then(|p| p.latest_cpu_mhz(&self.id))
+            .map(format_compact_mhz)
             .unwrap_or_else(|| "    ".to_string());
-        let cap_mem = self
-            .hw_memory_size
-            .map(|b| format_compact_metric(b as f64))
+        let cap_mem = perf
+            .and_then(|p| p.latest_mem_bytes(&self.id))
+            .map(format_compact_mem_bytes)
             .unwrap_or_else(|| "    ".to_string());
 
         let host_cpu = Cell::from(format!("{spark_cpu}{cap_cpu}"));
@@ -128,8 +117,8 @@ impl TabularData for Host {
     }
 
     fn sortable_columns() -> Vec<usize> {
-        // ID, Name, Version, CPU and Memory are sortable
-        vec![0, 3, 4, 5, 6, 7, 8]
+        // CPU/Memory (5,6) are not sortable: perf samples exist only for visible rows.
+        vec![0, 3, 4, 7, 8]
     }
 
     fn sort_by_column(column_idx: usize, descending: bool) -> Option<SortFn<Self>> {
@@ -137,8 +126,6 @@ impl TabularData for Host {
             0 => Box::new(|a, b| a.id.value.cmp(&b.id.value)),
             3 => Box::new(|a, b| a.name.cmp(&b.name)),
             4 => Box::new(|a, b| a.version.cmp(&b.version)),
-            5 => Box::new(|a, b| a.cpu_capacity_mhz().cmp(&b.cpu_capacity_mhz())),
-            6 => Box::new(|a, b| a.hw_memory_size.cmp(&b.hw_memory_size)),
             7 => Box::new(|a, b| a.vms.cmp(&b.vms)),
             8 => Box::new(|a, b| a.networks.cmp(&b.networks)),
             _ => return None,

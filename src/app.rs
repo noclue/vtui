@@ -105,7 +105,9 @@ impl App {
                 self.cache_mgr.borrow_mut().apply_updates(update)?;
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.invalidate();
+                    resource_mgr.refresh_perf_visible().await;
                 }
+                self.pending_redraw = true;
             }
             AppEvent::ErrorMessage(msg) => {
                 warn!("Error from update loop: {}", msg);

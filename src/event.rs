@@ -142,7 +142,7 @@ impl EventTask {
     /// This function emits tick events at a fixed rate and polls for crossterm events in between.
     async fn run(&mut self) -> Result<()> {
         let mut reader = crossterm::event::EventStream::new();
-        let start = tokio::time::Instant::now() + Duration::from_secs(20);
+        let start = tokio::time::Instant::now();
         let mut perf_interval = time::interval_at(start, Duration::from_secs(20));
         perf_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
