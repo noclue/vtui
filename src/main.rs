@@ -14,6 +14,7 @@ use vim_rs::core::pc_cache::CacheManager;
 mod app;
 mod body_pane;
 mod event;
+mod perf_worker;
 mod hints;
 mod history;
 mod inventory_path;

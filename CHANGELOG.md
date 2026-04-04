@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Non-blocking sparkline UI**: comprehensive architecture for moving all vSphere network operations off the main UI loop into background workers.
+
+Previously, a slow or hung vCenter response could freeze the entire UI — keystrokes would queue up and even quitting could stall. This is especially problematic during the exact infrastructure stress scenarios where operators need vtui most. Performance sparkline queries now run in a dedicated background worker instead of blocking the main event loop. Scrolling, filtering, searching, and periodic refreshes all remain responsive regardless of network latency. Sparklines populate within roughly 500ms of navigating to a new view, and stale results from a previous view are automatically discarded. This is the first phase of a broader effort to move all network operations off the UI thread.
+
 ## [0.2.3] - 2026-03-29
 
 ### Added
