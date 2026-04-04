@@ -1,12 +1,12 @@
 use super::events;
 use crate::event::{AppEvent, EventHandler};
+use crate::perf_worker::PerfRequest;
 use crate::resource_browser::cluster::ClusterDetails;
 use crate::resource_browser::data_loaders;
 use crate::resource_browser::datastore::{DatastoreDetails, get_datastore_hosts};
 use crate::resource_browser::hints::{HELP_HINTS, HELP_HINTS_EVENTS, get_expand_hint};
 use crate::resource_browser::host::Host;
 use crate::resource_browser::network::NetworkDetails;
-use crate::perf_worker::PerfRequest;
 use crate::resource_browser::perf::{PerfSnapshotShare, new_perf_snapshot_share};
 use crate::resource_browser::resource_table::ResourceTableWidget;
 use crate::resource_browser::tabular_data::TableDataSource;
@@ -294,14 +294,18 @@ impl ResourceManager {
 
             // Add shortcut keys to sub-collections - (n)etwork, (d)atastore, (h)ost, (v)m, (c)luster
             KeyCode::Char('n') => {
-                let new_view = self.expand_collection(ResourceType::Network, events).await?;
+                let new_view = self
+                    .expand_collection(ResourceType::Network, events)
+                    .await?;
                 return Ok(ResourceBrowserKeyResult {
                     handled: true,
                     new_perf_view: new_view,
                 });
             }
             KeyCode::Char('d') => {
-                let new_view = self.expand_collection(ResourceType::Datastore, events).await?;
+                let new_view = self
+                    .expand_collection(ResourceType::Datastore, events)
+                    .await?;
                 return Ok(ResourceBrowserKeyResult {
                     handled: true,
                     new_perf_view: new_view,
@@ -692,7 +696,7 @@ impl ResourceManager {
         if !matches!(
             self.resources.resource_type(),
             ResourceType::VirtualMachine | ResourceType::Host
-        )         && let Ok(mut g) = self.perf_snapshot.write()
+        ) && let Ok(mut g) = self.perf_snapshot.write()
         {
             g.clear();
         }

@@ -218,33 +218,31 @@ impl PerfPollerState {
 
         let specs: Vec<PerfQuerySpec> = entities
             .iter()
-            .map(|entity| {
-                PerfQuerySpec {
-                    entity: entity.clone(),
-                    start_time: None,
-                    end_time: None,
-                    max_sample: Some(SLOTS as i32),
-                    metric_id: Some(vec![
-                        PerfMetricId {
-                            counter_id: ids.cpu_usage,
-                            instance: String::new(),
-                        },
-                        PerfMetricId {
-                            counter_id: ids.mem_usage,
-                            instance: String::new(),
-                        },
-                        PerfMetricId {
-                            counter_id: ids.cpu_usagemhz,
-                            instance: String::new(),
-                        },
-                        PerfMetricId {
-                            counter_id: ids.mem_consumed,
-                            instance: String::new(),
-                        },
-                    ]),
-                    interval_id: Some(self.interval_id),
-                    format: None,
-                }
+            .map(|entity| PerfQuerySpec {
+                entity: entity.clone(),
+                start_time: None,
+                end_time: None,
+                max_sample: Some(SLOTS as i32),
+                metric_id: Some(vec![
+                    PerfMetricId {
+                        counter_id: ids.cpu_usage,
+                        instance: String::new(),
+                    },
+                    PerfMetricId {
+                        counter_id: ids.mem_usage,
+                        instance: String::new(),
+                    },
+                    PerfMetricId {
+                        counter_id: ids.cpu_usagemhz,
+                        instance: String::new(),
+                    },
+                    PerfMetricId {
+                        counter_id: ids.mem_consumed,
+                        instance: String::new(),
+                    },
+                ]),
+                interval_id: Some(self.interval_id),
+                format: None,
             })
             .collect();
 

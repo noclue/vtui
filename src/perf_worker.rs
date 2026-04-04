@@ -72,10 +72,7 @@ pub async fn run_perf_worker(
             None => continue,
         };
 
-        match poller_ref
-            .poll_entities(&req.entities, &req.snapshot)
-            .await
-        {
+        match poller_ref.poll_entities(&req.entities, &req.snapshot).await {
             Ok(()) => {
                 let _ = event_tx.send(Event::App(Box::new(AppEvent::PerfResult {
                     generation: req.generation,

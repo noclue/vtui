@@ -1,8 +1,8 @@
 use crate::body_pane::BodyPane;
 use crate::event::{AppEvent, Event, EventHandler};
-use crate::perf_worker::{run_perf_worker, PerfRequest};
 use crate::hints;
 use crate::history::{History, HistoryManager};
+use crate::perf_worker::{PerfRequest, run_perf_worker};
 use crate::prop_browser::{
     BrowserMetadata, PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager,
 };

@@ -55,7 +55,9 @@ pub enum AppEvent {
     PropertyManagerHistory(PropertyHistoryRecord),
 
     /// Background perf worker completed a poll cycle for `generation`.
-    PerfResult { generation: u64 },
+    PerfResult {
+        generation: u64,
+    },
 }
 
 /// Terminal event handler.
