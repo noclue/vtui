@@ -7,8 +7,7 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
-use vim_rs::core::client::{Client, ClientBuilder, TransportMode};
+use vim_rs::core::client::{ClientBuilder, TransportMode, VimClientHandle};
 use vim_rs::core::pc_cache::CacheManager;
 
 mod app;
@@ -76,7 +75,7 @@ async fn main() -> Result<()> {
     app_result
 }
 
-async fn init_vim_client(cfg: &config::ResolvedConfig) -> Result<Arc<Client>> {
+async fn init_vim_client(cfg: &config::ResolvedConfig) -> Result<VimClientHandle> {
     let transport = match cfg.protocol.as_str() {
         "auto" => TransportMode::Auto,
         "json" => TransportMode::Json,

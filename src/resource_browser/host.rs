@@ -156,3 +156,47 @@ impl TabularData for Host {
         ResourceType::Host
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Host;
+    use crate::resource_browser::tabular_data::TabularData;
+    use vim_rs::types::enums::{
+        HostSystemConnectionStateEnum, ManagedEntityStatusEnum, MoTypesEnum,
+    };
+    use vim_rs::types::structs::ManagedObjectReference;
+
+    fn sample_host(value: &str, name: &str, version: Option<&str>) -> Host {
+        Host {
+            id: ManagedObjectReference {
+                r#type: MoTypesEnum::HostSystem,
+                value: value.into(),
+            },
+            overall_status: ManagedEntityStatusEnum::Green,
+            connection_state: HostSystemConnectionStateEnum::Connected,
+            name: name.into(),
+            version: version.map(String::from),
+            uptime: None,
+            vms: None,
+            networks: None,
+            datastores: None,
+        }
+    }
+
+    #[test]
+    fn matches_filter_name_id_and_version() {
+        let h = sample_host("host-9", "esxi-a", Some("8.0.2"));
+        assert!(h.matches_filter("esxi"));
+        assert!(h.matches_filter("HOST-9"));
+        assert!(h.matches_filter("8.0"));
+        assert!(!h.matches_filter("missing"));
+    }
+
+    #[test]
+    fn sort_by_name_column() {
+        let a = sample_host("1", "aa", None);
+        let b = sample_host("2", "bb", None);
+        let mut cmp = Host::sort_by_column(3, false).expect("column 3 sortable");
+        assert_eq!(cmp(&a, &b), std::cmp::Ordering::Less);
+    }
+}

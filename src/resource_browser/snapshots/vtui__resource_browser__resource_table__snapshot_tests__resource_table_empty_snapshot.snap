@@ -1,0 +1,18 @@
+---
+source: src/resource_browser/resource_table.rs
+expression: "draw_table(&mut mock, &parent, &mut state, 72, 14)"
+---
+"┌──────────────────────────Mock VMs (all)[0]───────────────────────────┐"
+"│  ID                     Name                   Note                  │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"│                                                                      │"
+"└ vTUI version: 0.2.3 ──────────────────────────────────────↑↓ - scroll┘"

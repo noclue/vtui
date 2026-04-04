@@ -30,6 +30,9 @@ rpassword = "7"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 
+[dev-dependencies]
+insta = "1"
+
 [profile.release]
 lto = "fat"
 strip = true

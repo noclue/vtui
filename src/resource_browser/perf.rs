@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use log::debug;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::VimClientHandle;
 use vim_rs::mo::PerformanceManager;
 use vim_rs::types::enums::PerfSummaryTypeEnum;
 use vim_rs::types::structs::{
@@ -157,7 +157,7 @@ pub struct PerfPollerState {
 }
 
 impl PerfPollerState {
-    pub fn new(client: Arc<Client>) -> anyhow::Result<Self> {
+    pub fn new(client: VimClientHandle) -> anyhow::Result<Self> {
         let Some(pm_moref) = client.service_content().perf_manager.clone() else {
             anyhow::bail!("PerformanceManager not available in ServiceContent");
         };

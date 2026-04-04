@@ -2,11 +2,10 @@
 
 use crate::event::{AppEvent, Event};
 use crate::resource_browser::perf::{PerfPollerState, PerfSnapshotShare, new_perf_snapshot_share};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::MissedTickBehavior;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::VimClientHandle;
 use vim_rs::types::structs::ManagedObjectReference;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(20);
@@ -31,7 +30,7 @@ impl PerfRequest {
 }
 
 pub async fn run_perf_worker(
-    client: Arc<Client>,
+    client: VimClientHandle,
     mut watch_rx: watch::Receiver<PerfRequest>,
     event_tx: mpsc::UnboundedSender<Event>,
 ) {

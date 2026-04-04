@@ -4,8 +4,7 @@
 use anyhow::{Context, Result};
 use log::debug;
 use std::collections::HashMap;
-use std::sync::Arc;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::VimClientHandle;
 use vim_rs::mo::PropertyCollector;
 use vim_rs::types::boxed_types::ValueElements;
 use vim_rs::types::enums::MoTypesEnum;
@@ -150,7 +149,7 @@ fn parse_object_content(oc: &ObjectContent) -> Result<AncestorParsed> {
 }
 
 async fn retrieve_ancestors_contents(
-    client: &Arc<Client>,
+    client: &VimClientHandle,
     start: ManagedObjectReference,
 ) -> Result<Vec<ObjectContent>> {
     let label = format!("{}:{}", start.r#type.as_str(), start.value);
@@ -251,7 +250,7 @@ fn leaf_to_root_chain(
 
 /// Resolves govmomi-style inventory path for `start` (e.g. `/Datacenter/vm/.../VmName`).
 pub async fn resolve_inventory_path(
-    client: Arc<Client>,
+    client: VimClientHandle,
     start: ManagedObjectReference,
 ) -> Result<String> {
     let label = format!("{}:{}", start.r#type.as_str(), start.value);

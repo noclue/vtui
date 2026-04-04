@@ -21,8 +21,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::VimClientHandle;
 use vim_rs::core::pc_cache::CacheManager;
 use vim_rs::mo::EventHistoryCollector;
 use vim_rs::types::enums::MoTypesEnum;
@@ -39,7 +38,7 @@ pub struct ResourceManager {
     /// Cache manager for managing object caches.
     cache_mgr: Rc<RefCell<CacheManager>>,
     /// Client for interacting with the vSphere API.
-    client: Arc<Client>,
+    client: VimClientHandle,
     /// Data source for the table view.
     resources: Box<dyn TableDataSource>,
     /// PropertyCollector filter for the current view
@@ -97,7 +96,7 @@ impl ResourceManager {
     /// * `client` - A reference to the vSphere API client.
     /// * `cache_mgr` - A reference to the cache manager for managing object caches.
     pub async fn new(
-        client: Arc<Client>,
+        client: VimClientHandle,
         cache_mgr: Rc<RefCell<CacheManager>>,
         resource_type: ResourceType,
     ) -> anyhow::Result<Self> {
@@ -126,7 +125,7 @@ impl ResourceManager {
 
     pub async fn from_history_record(
         record: HistoryRecord,
-        client: Arc<Client>,
+        client: VimClientHandle,
         cache_mgr: Rc<RefCell<CacheManager>>,
     ) -> anyhow::Result<Self> {
         debug!(
@@ -468,7 +467,7 @@ impl ResourceManager {
         resource_type: ResourceType,
         parent_id: &ManagedObjectReference,
         cache_mgr: Rc<RefCell<CacheManager>>,
-        client: &Arc<Client>,
+        client: &VimClientHandle,
     ) -> anyhow::Result<(
         Box<dyn TableDataSource>,
         ManagedObjectReference,
@@ -625,7 +624,7 @@ impl ResourceManager {
     async fn load_from_container(
         resource_type: ResourceType,
         cache_mgr: Rc<RefCell<CacheManager>>,
-        client: &Arc<Client>,
+        client: &VimClientHandle,
     ) -> anyhow::Result<(
         Box<dyn TableDataSource>,
         ManagedObjectReference,
