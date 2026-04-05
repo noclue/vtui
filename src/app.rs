@@ -2,6 +2,7 @@ use crate::body_pane::BodyPane;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
+use crate::perf_worker::{PerfRequest, run_perf_worker};
 use crate::prop_browser::{
     BrowserMetadata, PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager,
 };
@@ -19,8 +20,8 @@ use ratatui::text::Line;
 use ratatui::{DefaultTerminal, Frame};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use vim_rs::core::client::{Client, Transport, VimClient};
+use tokio::sync::watch;
+use vim_rs::core::client::{Transport, VimClientHandle};
 use vim_rs::core::pc_cache::CacheManager;
 
 /// Main application object.
@@ -30,7 +31,7 @@ pub struct App {
     /// Cache manager for managing object caches.
     cache_mgr: Rc<RefCell<CacheManager>>,
     /// Client for interacting with the vSphere API.
-    client: Arc<Client>,
+    client: VimClientHandle,
     /// Body pane.
     body_pane: BodyPane,
     /// Event dispatcher for processing events.
@@ -47,6 +48,11 @@ pub struct App {
     error_popup: Option<String>,
     /// Redraw once after async app work so modals appear without waiting for another event.
     pending_redraw: bool,
+    /// Monotonic view id for discarding stale perf worker results.
+    perf_generation: u64,
+    perf_worker: tokio::task::JoinHandle<()>,
+    /// Dropped last so the perf worker observes shutdown after other teardown begins.
+    perf_tx: watch::Sender<PerfRequest>,
 }
 
 const ASCII_ART: &str = r#"     ╭───────╮
@@ -59,8 +65,15 @@ impl App {
     pub async fn new(
         events: EventHandler,
         cache_mgr: Rc<RefCell<CacheManager>>,
-        client: Arc<Client>,
+        client: VimClientHandle,
     ) -> anyhow::Result<Self> {
+        let (perf_tx, perf_rx) = watch::channel(PerfRequest::initial());
+        let event_tx = events.clone_event_sender();
+        let client_for_worker = client.clone();
+        let perf_worker = tokio::spawn(async move {
+            run_perf_worker(client_for_worker, perf_rx, event_tx).await;
+        });
+
         // Create a new ResourceManager instance
         let resource_mgr = ResourceManager::new(
             client.clone(),
@@ -68,7 +81,7 @@ impl App {
             ResourceType::VirtualMachine,
         )
         .await?;
-        Ok(Self {
+        let mut app = Self {
             should_quit: false,
             cache_mgr,
             client,
@@ -80,7 +93,22 @@ impl App {
             vm_action_ui: VmActionUi::default(),
             error_popup: None,
             pending_redraw: false,
-        })
+            perf_generation: 1,
+            perf_worker,
+            perf_tx,
+        };
+        app.signal_perf_worker();
+        Ok(app)
+    }
+
+    fn signal_perf_worker(&mut self) {
+        if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
+            let req = resource_mgr.perf_request(self.perf_generation);
+            // `watch::Sender::send` returns Err while `receiver_count() == 0`, which can happen
+            // briefly before the spawned perf task is first polled. `send_replace` always stores
+            // the latest request so the worker sees it on the next `borrow_and_update`.
+            let _ = self.perf_tx.send_replace(req);
+        }
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> anyhow::Result<()> {
@@ -106,12 +134,15 @@ impl App {
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.invalidate();
                 }
+                self.signal_perf_worker();
+                self.pending_redraw = true;
             }
             AppEvent::ErrorMessage(msg) => {
                 warn!("Error from update loop: {}", msg);
             }
             AppEvent::Quit => {
                 info!("Quitting...");
+                self.perf_worker.abort();
                 self.events.shutdown().await?;
                 self.should_quit = true
             }
@@ -120,8 +151,8 @@ impl App {
                 debug!("SearchCompleted. filter: {:?}", filter);
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.set_filter(Some(filter));
-                    resource_mgr.refresh_perf_visible().await;
                 }
+                self.signal_perf_worker();
                 self.pending_redraw = true;
             }
             AppEvent::OpenResourceSelection => self.resource_selection_state.activate(),
@@ -132,6 +163,7 @@ impl App {
                         resource_mgr
                             .load_resource_type(resource_type, &mut self.events)
                             .await?;
+                        self.perf_generation = self.perf_generation.saturating_add(1);
                     }
                     BodyPane::PropertyBrowser(prop_mgr) => {
                         prop_mgr.save_state(&mut self.events);
@@ -141,6 +173,7 @@ impl App {
                             resource_type,
                         )
                         .await?;
+                        self.perf_generation = self.perf_generation.saturating_add(1);
                         self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
                     }
                     BodyPane::StaticPropertyBrowser(static_mgr) => {
@@ -151,9 +184,11 @@ impl App {
                             resource_type,
                         )
                         .await?;
+                        self.perf_generation = self.perf_generation.saturating_add(1);
                         self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
                     }
                 }
+                self.signal_perf_worker();
             }
             AppEvent::OpenVmActions(vm_ref) => {
                 match prefetch_vm_action_context(self.client.clone(), vm_ref).await {
@@ -191,11 +226,10 @@ impl App {
             AppEvent::PropertyManagerHistory(history) => {
                 self.history.add_property_entry(history);
             }
-            AppEvent::PerfTick => {
-                if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
-                    resource_mgr.refresh_perf_visible().await;
+            AppEvent::PerfResult { generation } => {
+                if generation == self.perf_generation {
+                    self.pending_redraw = true;
                 }
-                self.pending_redraw = true;
             }
         }
         Ok(())
@@ -347,7 +381,12 @@ impl App {
                 return Ok(());
             }
 
-            if self.body_pane.handle_key(key, &mut self.events).await? {
+            let key_outcome = self.body_pane.handle_key(key, &mut self.events).await?;
+            if key_outcome.new_perf_view {
+                self.perf_generation = self.perf_generation.saturating_add(1);
+            }
+            if key_outcome.handled {
+                self.signal_perf_worker();
                 return Ok(());
             }
 
@@ -367,8 +406,11 @@ impl App {
                 History::Resource(record) => match self.body_pane {
                     BodyPane::ResourceBrowser(ref mut resource_mgr) => {
                         resource_mgr.load_history_record(record).await?;
+                        self.perf_generation = self.perf_generation.saturating_add(1);
+                        self.signal_perf_worker();
                     }
                     BodyPane::PropertyBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
+                        self.perf_generation = self.perf_generation.saturating_add(1);
                         self.body_pane = BodyPane::ResourceBrowser(Box::new(
                             ResourceManager::from_history_record(
                                 record,
@@ -377,6 +419,7 @@ impl App {
                             )
                             .await?,
                         ));
+                        self.signal_perf_worker();
                     }
                 },
                 History::Property(record) => match record {

@@ -1,12 +1,13 @@
 use super::events;
 use crate::event::{AppEvent, EventHandler};
+use crate::perf_worker::PerfRequest;
 use crate::resource_browser::cluster::ClusterDetails;
 use crate::resource_browser::data_loaders;
 use crate::resource_browser::datastore::{DatastoreDetails, get_datastore_hosts};
 use crate::resource_browser::hints::{HELP_HINTS, HELP_HINTS_EVENTS, get_expand_hint};
 use crate::resource_browser::host::Host;
 use crate::resource_browser::network::NetworkDetails;
-use crate::resource_browser::perf::{PerfPollerState, PerfSnapshotShare, new_perf_snapshot_share};
+use crate::resource_browser::perf::{PerfSnapshotShare, new_perf_snapshot_share};
 use crate::resource_browser::resource_table::ResourceTableWidget;
 use crate::resource_browser::tabular_data::TableDataSource;
 use crate::resource_browser::task::{TaskInfo, ensure_task_descriptions_initialized};
@@ -20,8 +21,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use vim_rs::core::client::Client;
+use vim_rs::core::client::VimClientHandle;
 use vim_rs::core::pc_cache::CacheManager;
 use vim_rs::mo::EventHistoryCollector;
 use vim_rs::types::enums::MoTypesEnum;
@@ -38,7 +38,7 @@ pub struct ResourceManager {
     /// Cache manager for managing object caches.
     cache_mgr: Rc<RefCell<CacheManager>>,
     /// Client for interacting with the vSphere API.
-    client: Arc<Client>,
+    client: VimClientHandle,
     /// Data source for the table view.
     resources: Box<dyn TableDataSource>,
     /// PropertyCollector filter for the current view
@@ -53,9 +53,15 @@ pub struct ResourceManager {
     source_cleanup: ResourceCleanup,
     /// Live CPU/mem % samples for VM/Host sparklines (visible rows).
     perf_snapshot: PerfSnapshotShare,
-    perf_poller: Option<PerfPollerState>,
     /// Inner height of the table block last render (`body_area.height - 2`); used for visible-row perf queries.
     last_table_inner_height: u16,
+}
+
+/// Result of [`ResourceManager::handle_key`]: `new_perf_view` means table source changed (expand, etc.).
+#[derive(Debug, Clone, Copy)]
+pub struct ResourceBrowserKeyResult {
+    pub handled: bool,
+    pub new_perf_view: bool,
 }
 
 #[derive(Debug)]
@@ -90,7 +96,7 @@ impl ResourceManager {
     /// * `client` - A reference to the vSphere API client.
     /// * `cache_mgr` - A reference to the cache manager for managing object caches.
     pub async fn new(
-        client: Arc<Client>,
+        client: VimClientHandle,
         cache_mgr: Rc<RefCell<CacheManager>>,
         resource_type: ResourceType,
     ) -> anyhow::Result<Self> {
@@ -102,7 +108,7 @@ impl ResourceManager {
             Self::load_from_container(resource_type, cache_mgr.clone(), &client).await?;
 
         let perf_snapshot = new_perf_snapshot_share();
-        let mut mgr = Self {
+        let mgr = Self {
             cache_mgr,
             client,
             resources,
@@ -112,16 +118,14 @@ impl ResourceManager {
             pending_table_state: None,
             source_cleanup,
             perf_snapshot,
-            perf_poller: None,
             last_table_inner_height: 0,
         };
-        mgr.refresh_perf_visible().await;
         Ok(mgr)
     }
 
     pub async fn from_history_record(
         record: HistoryRecord,
-        client: Arc<Client>,
+        client: VimClientHandle,
         cache_mgr: Rc<RefCell<CacheManager>>,
     ) -> anyhow::Result<Self> {
         debug!(
@@ -152,7 +156,7 @@ impl ResourceManager {
         resources.invalidate();
 
         let perf_snapshot = new_perf_snapshot_share();
-        let mut mgr = Self {
+        let mgr = Self {
             cache_mgr,
             client,
             resources,
@@ -162,10 +166,8 @@ impl ResourceManager {
             pending_table_state: Some((record.offset, record.selected_index)),
             source_cleanup,
             perf_snapshot,
-            perf_poller: None,
             last_table_inner_height: 0,
         };
-        mgr.refresh_perf_visible().await;
         Ok(mgr)
     }
 
@@ -174,7 +176,8 @@ impl ResourceManager {
         previous_state: HistoryRecord,
     ) -> anyhow::Result<()> {
         if let Some(parent) = previous_state.parent {
-            self.expand_parent_collection(previous_state.resource_type, &parent.0, parent.1)
+            let _ = self
+                .expand_parent_collection(previous_state.resource_type, &parent.0, parent.1)
                 .await?;
         } else {
             self.parent = None;
@@ -193,7 +196,6 @@ impl ResourceManager {
         }
         self.resources.invalidate();
 
-        self.refresh_perf_visible().await;
         Ok(())
     }
     pub fn save_state(&mut self, events: &mut EventHandler) {
@@ -233,32 +235,20 @@ impl ResourceManager {
         frame.render_stateful_widget(table, body_area, &mut self.table_state);
     }
 
-    /// Refresh performance samples for currently visible VM/Host rows (best-effort).
-    pub async fn refresh_perf_visible(&mut self) {
-        if !matches!(
+    /// Build a [`PerfRequest`] from current visible state (does not contact the worker).
+    pub fn perf_request(&mut self, generation: u64) -> PerfRequest {
+        let entities = if matches!(
             self.resource_type(),
             ResourceType::VirtualMachine | ResourceType::Host
         ) {
-            return;
-        }
-        let refs = self.visible_managed_object_refs();
-        if refs.is_empty() {
-            return;
-        }
-        if self.perf_poller.is_none() {
-            match PerfPollerState::new(self.client.clone()) {
-                Ok(p) => self.perf_poller = Some(p),
-                Err(e) => {
-                    warn!("PerformanceManager init failed: {}", e);
-                    return;
-                }
-            }
-        }
-        let Some(poller) = self.perf_poller.as_mut() else {
-            return;
+            self.visible_managed_object_refs()
+        } else {
+            vec![]
         };
-        if let Err(e) = poller.poll_entities(&refs, &self.perf_snapshot).await {
-            warn!("perf query failed: {}", e);
+        PerfRequest {
+            generation,
+            entities,
+            snapshot: self.perf_snapshot.clone(),
         }
     }
 
@@ -289,7 +279,7 @@ impl ResourceManager {
         &mut self,
         key: &KeyEvent,
         events: &mut EventHandler,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<ResourceBrowserKeyResult> {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.table_state.scroll_down_by(1),
             KeyCode::Char('k') | KeyCode::Up => self.table_state.scroll_up_by(1),
@@ -303,21 +293,54 @@ impl ResourceManager {
 
             // Add shortcut keys to sub-collections - (n)etwork, (d)atastore, (h)ost, (v)m, (c)luster
             KeyCode::Char('n') => {
-                self.expand_collection(ResourceType::Network, events)
-                    .await?
+                let new_view = self
+                    .expand_collection(ResourceType::Network, events)
+                    .await?;
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: new_view,
+                });
             }
             KeyCode::Char('d') => {
-                self.expand_collection(ResourceType::Datastore, events)
-                    .await?
+                let new_view = self
+                    .expand_collection(ResourceType::Datastore, events)
+                    .await?;
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: new_view,
+                });
             }
-            KeyCode::Char('h') => self.expand_collection(ResourceType::Host, events).await?,
+            KeyCode::Char('h') => {
+                let new_view = self.expand_collection(ResourceType::Host, events).await?;
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: new_view,
+                });
+            }
             KeyCode::Char('v') => {
-                self.expand_collection(ResourceType::VirtualMachine, events)
-                    .await?
+                let new_view = self
+                    .expand_collection(ResourceType::VirtualMachine, events)
+                    .await?;
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: new_view,
+                });
             }
             //KeyCode::Char('c') => self.events.send(AppEvent::ExpandCollection(ResourceType::Cluster)),
-            KeyCode::Char('t') => self.expand_collection(ResourceType::Task, events).await?,
-            KeyCode::Char('e') => self.expand_collection(ResourceType::Event, events).await?,
+            KeyCode::Char('t') => {
+                let new_view = self.expand_collection(ResourceType::Task, events).await?;
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: new_view,
+                });
+            }
+            KeyCode::Char('e') => {
+                let new_view = self.expand_collection(ResourceType::Event, events).await?;
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: new_view,
+                });
+            }
             KeyCode::Char('x') if self.resource_type() == ResourceType::VirtualMachine => {
                 if let Some((vm_ref, _)) = self.selected_item() {
                     events.send(AppEvent::OpenVmActions(vm_ref));
@@ -339,11 +362,16 @@ impl ResourceManager {
                 }
             }
             _ => {
-                return Ok(false);
+                return Ok(ResourceBrowserKeyResult {
+                    handled: false,
+                    new_perf_view: false,
+                });
             }
         }
-        self.refresh_perf_visible().await;
-        Ok(true)
+        Ok(ResourceBrowserKeyResult {
+            handled: true,
+            new_perf_view: false,
+        })
     }
     pub(crate) async fn load_resource_type(
         &mut self,
@@ -366,16 +394,17 @@ impl ResourceManager {
         (get_expand_hint(self.resource_type()), help)
     }
 
+    /// Returns `true` if the table source was replaced (caller should bump perf generation).
     async fn expand_collection(
         &mut self,
         resource_type: ResourceType,
         events: &mut EventHandler,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         // Save the current navigation state
         self.save_state(events);
         // Read the id of the currently selected resource
         let Some((selected_id, selected_name)) = self.selected_item() else {
-            return Ok(());
+            return Ok(false);
         };
 
         self.expand_parent_collection(resource_type, &selected_id, selected_name)
@@ -393,7 +422,7 @@ impl ResourceManager {
         resource_type: ResourceType,
         parent_id: &ManagedObjectReference,
         parent_name: String,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         let cache_mgr = self.cache_mgr.clone();
         let client = &self.client;
 
@@ -408,7 +437,7 @@ impl ResourceManager {
                 self.apply_new_table_source(resources, filter, cleanup)
                     .await?;
                 self.parent = Some((parent_id.clone(), parent_name));
-                Ok(())
+                Ok(true)
             }
             Err(err) => {
                 // Check if it's our specific error type
@@ -421,7 +450,7 @@ impl ResourceManager {
                         "Ignoring unsupported expansion: resource: {}, prent: {}",
                         resource_type, parent_type
                     );
-                    Ok(())
+                    Ok(false)
                 } else {
                     // Unknown/network errors - propagate up
                     warn!(
@@ -438,7 +467,7 @@ impl ResourceManager {
         resource_type: ResourceType,
         parent_id: &ManagedObjectReference,
         cache_mgr: Rc<RefCell<CacheManager>>,
-        client: &Arc<Client>,
+        client: &VimClientHandle,
     ) -> anyhow::Result<(
         Box<dyn TableDataSource>,
         ManagedObjectReference,
@@ -595,7 +624,7 @@ impl ResourceManager {
     async fn load_from_container(
         resource_type: ResourceType,
         cache_mgr: Rc<RefCell<CacheManager>>,
-        client: &Arc<Client>,
+        client: &VimClientHandle,
     ) -> anyhow::Result<(
         Box<dyn TableDataSource>,
         ManagedObjectReference,
@@ -670,7 +699,6 @@ impl ResourceManager {
         {
             g.clear();
         }
-        self.refresh_perf_visible().await;
         Ok(())
     }
 }

@@ -1,18 +1,23 @@
 name: Publish to WinGet
 
 on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       release-tag:
         description: Git tag to publish to WinGet (for example v0.2.1)
         required: true
         type: string
-  release:
-    types: [released]
 
 jobs:
   publish-winget:
     runs-on: windows-latest
+    # For automated runs: only proceed when the Release workflow succeeded.
+    # workflow_run is fired by GitHub infrastructure, not GITHUB_TOKEN, so it
+    # is not suppressed the way a `release:` event would be.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Submit to Microsoft Winget
         uses: vedantmgoyal9/winget-releaser@v2
@@ -20,5 +25,5 @@ jobs:
           identifier: noclue.vtui
           # We MUST use zip because cargo-dist uploads zips, not raw exes
           installers-regex: '\.zip$'
-          release-tag: ${{ github.event.release.tag_name || github.event.inputs.release-tag }}
+          release-tag: ${{ github.event.workflow_run.head_branch || github.event.inputs.release-tag }}
           token: ${{ secrets.WINGET_TOKEN }}

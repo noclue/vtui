@@ -13,6 +13,13 @@ pub(crate) enum BodyPane {
     StaticPropertyBrowser(StaticPropertyBrowserManager),
 }
 
+/// Unified key handling result for [`BodyPane::handle_key`].
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BodyKeyResult {
+    pub handled: bool,
+    pub new_perf_view: bool,
+}
+
 impl BodyPane {
     pub fn render(&mut self, frame: &mut Frame, body_area: Rect) {
         match self {
@@ -32,16 +39,28 @@ impl BodyPane {
         &mut self,
         key: &KeyEvent,
         events: &mut EventHandler,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<BodyKeyResult> {
         match self {
             BodyPane::ResourceBrowser(resource_manager) => {
-                resource_manager.handle_key(key, events).await
+                let r = resource_manager.handle_key(key, events).await?;
+                Ok(BodyKeyResult {
+                    handled: r.handled,
+                    new_perf_view: r.new_perf_view,
+                })
             }
             BodyPane::PropertyBrowser(property_browser) => {
-                property_browser.handle_key(key, events).await
+                let handled = property_browser.handle_key(key, events).await?;
+                Ok(BodyKeyResult {
+                    handled,
+                    new_perf_view: false,
+                })
             }
             BodyPane::StaticPropertyBrowser(static_browser) => {
-                static_browser.handle_key(key, events).await
+                let handled = static_browser.handle_key(key, events).await?;
+                Ok(BodyKeyResult {
+                    handled,
+                    new_perf_view: false,
+                })
             }
         }
     }

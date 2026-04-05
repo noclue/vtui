@@ -1,14 +1,17 @@
 //! VM power actions and VIM execution (MVP: fire task / guest op, do not wait on tasks).
 //!
 //! VM name and `disabledMethod` are loaded in one `PropertyCollector::RetrievePropertiesEx` round
-//! trip via [`vim_rs::core::pc_retrieve::ObjectRetriever`] (see vim_rs README / `vim_retrievable`).
+//! trip (list view + property spec), same pattern as [`vim_rs::core::pc_retrieve::ObjectRetriever`]
+//! but against [`VimClientHandle`] so callers can inject a mock [`vim_rs::core::client::VimClient`].
 
 use anyhow::Context;
 use log::{debug, warn};
-use std::sync::Arc;
-use vim_rs::core::client::Client;
-use vim_rs::core::pc_retrieve::ObjectRetriever;
-use vim_rs::mo::VirtualMachine;
+use vim_rs::core::client::VimClientHandle;
+use vim_rs::core::error::Error as VimError;
+use vim_rs::core::error::Result as VimResult;
+use vim_rs::core::pc_helpers::BoxableError;
+use vim_rs::core::pc_retrieve::Retrievable;
+use vim_rs::mo::{PropertyCollector, View, ViewManager, VirtualMachine};
 use vim_rs::types::structs::ManagedObjectReference;
 use vim_rs::vim_retrievable;
 
@@ -18,6 +21,80 @@ vim_retrievable!(
         disabled_method = "disabled_method",
     }
 );
+
+/// Mirrors `vim_rs` `pc_helpers::obj_spec_for_view` (crate-private there): traverse `view` from a list/container view MO.
+fn obj_spec_for_view(
+    view_moref: ManagedObjectReference,
+) -> Vec<vim_rs::types::structs::ObjectSpec> {
+    let r#type = view_moref.r#type.clone();
+    vec![vim_rs::types::structs::ObjectSpec {
+        obj: view_moref,
+        skip: Some(false),
+        select_set: Some(vec![Box::new(vim_rs::types::structs::TraversalSpec {
+            selection_spec_: vim_rs::types::structs::SelectionSpec {
+                name: Some("traverseEntities".to_string()),
+            },
+            r#type: r#type.as_str().to_string(),
+            path: "view".to_string(),
+            skip: Some(false),
+            select_set: None,
+        })]),
+    }]
+}
+
+// Mirrors `vim_rs` `pc_helpers::retrieve_objects_from_list` (crate-private there): retrieve objects from a list/container view MO.
+async fn retrieve_objects_from_list<T>(
+    client: VimClientHandle,
+    objs: &[ManagedObjectReference],
+) -> VimResult<Vec<T>>
+where
+    T: Retrievable,
+    <T as TryFrom<vim_rs::types::structs::ObjectContent>>::Error: BoxableError,
+{
+    let pc_mo_id = client.service_content().property_collector.value.as_str();
+    let property_collector = PropertyCollector::new(client.clone(), pc_mo_id);
+    let Some(view_manager_moref) = &client.service_content().view_manager else {
+        return Err(VimError::internal("cannot find view_manager".to_string()));
+    };
+    let view_manager = ViewManager::new(client.clone(), &view_manager_moref.value);
+    let view_moref = view_manager.create_list_view(Some(objs)).await?;
+    let view = View::new(client.clone(), &view_moref.value);
+    let object_set = obj_spec_for_view(view_moref);
+    let spec_set = vec![vim_rs::types::structs::PropertyFilterSpec {
+        object_set,
+        prop_set: vec![T::prop_spec()],
+        report_missing_objects_in_results: Some(true),
+    }];
+    let options = vim_rs::types::structs::RetrieveOptions {
+        max_objects: Some(100),
+    };
+    let inner = async {
+        let retrieve_result = property_collector
+            .retrieve_properties_ex(&spec_set, &options)
+            .await?;
+        let Some(mut res) = retrieve_result else {
+            return Ok(Vec::new());
+        };
+        let mut out: Vec<T> = Vec::new();
+        loop {
+            for obj in res.objects {
+                out.push(obj.try_into().map_err(|e| {
+                    VimError::from(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                })?);
+            }
+            let Some(token) = res.token else {
+                break;
+            };
+            res = property_collector
+                .continue_retrieve_properties_ex(&token)
+                .await?;
+        }
+        Ok(out)
+    };
+    let out = inner.await;
+    view.destroy_view().await?;
+    out
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmPowerAction {
@@ -88,7 +165,7 @@ fn vm_ref_label(vm: &ManagedObjectReference) -> String {
 /// Log target `vm_actions`: set `LOG_LEVEL=debug` to see each SOAP/JSON step (useful when XML
 /// deserialization fails for a specific property).
 pub async fn prefetch_vm_action_context(
-    client: Arc<Client>,
+    client: VimClientHandle,
     vm: ManagedObjectReference,
 ) -> anyhow::Result<VmActionContext> {
     let label = vm_ref_label(&vm);
@@ -96,14 +173,16 @@ pub async fn prefetch_vm_action_context(
 
     debug!(
         target: "vm_actions",
-        "prefetch_vm_action_context: ObjectRetriever.retrieve_objects_from_list (name + disabledMethod) vm={label}"
+        "prefetch_vm_action_context: retrieve_objects_from_list (name + disabledMethod) vm={label}"
     );
-    let retriever = ObjectRetriever::new(client.clone()).map_err(anyhow::Error::from)?;
-    let mut rows = retriever
-        .retrieve_objects_from_list::<VmPowerActionProps>(std::slice::from_ref(&vm))
-        .await
-        .map_err(anyhow::Error::from)
-        .with_context(|| format!("prefetch failed retrieving name/disabledMethod for {label}"))?;
+    // Revert this code to ObjectRetriever::retrieve_objects_from_list when it supports the Arc<dyn VimClient> argument.
+    let mut rows =
+        retrieve_objects_from_list::<VmPowerActionProps>(client.clone(), std::slice::from_ref(&vm))
+            .await
+            .map_err(anyhow::Error::from)
+            .with_context(|| {
+                format!("prefetch failed retrieving name/disabledMethod for {label}")
+            })?;
     let row = rows
         .pop()
         .with_context(|| format!("prefetch: empty retrieve result for {label}"))?;
@@ -140,7 +219,7 @@ pub struct VmActionContext {
 }
 
 pub async fn execute_vm_power_action(
-    client: Arc<Client>,
+    client: VimClientHandle,
     vm: &ManagedObjectReference,
     action: VmPowerAction,
 ) -> anyhow::Result<()> {
