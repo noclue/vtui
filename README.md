@@ -108,10 +108,10 @@ vTUI runs the string with your system shell (`sh -c` on Unix, `cmd /C` on Window
 - **envchain** (macOS Keychain-backed env vars): store secrets under a namespace, then expose one variable to stdout:
 
   ```toml
-  default_env = "vc8"
+  default_env = "vc"
 
-  [environments.vc8]
-  server = "vc8.home"
+  [environments.vc]
+  server = "vc.home"
   username = "peter@vsphere.local"
   password_cmd = "envchain VIM printenv VC8"
   log_level = "debug"
@@ -121,6 +121,31 @@ vTUI runs the string with your system shell (`sh -c` on Unix, `cmd /C` on Window
 
 - **1Password CLI**: e.g. `password_cmd = "op read op://Vault/item/password"`.
 - **Bitwarden CLI**: e.g. `bw get password <id>` (ensure the CLI is logged in).
+
+- **Get-Secret** (Windows PowerShell SecretManagement):
+
+Install Microsoft.PowerShell.SecretManagement and Microsoft.PowerShell.SecretStore modules. From Administrator's powershell console run:
+```pwsh
+Install-Module -Name Microsoft.PowerShell.SecretManagement
+Install-Module -Name Microsoft.PowerShell.SecretStore
+```
+Setup local secret store
+```pwsh
+Register-SecretVault -Name "MyLocalVault" -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
+Set-SecretStoreConfiguration -Authentication None -Confirm:$false
+```
+The last command disables constant nagging to re-enter current account authentication.
+
+Below is a sample config for Windows (Note that using quotes or curly braces does not seem play well with Windows. File vtui a ticket if you feel this should be better handled)
+```toml
+default_env="vc"
+
+[environments.vc]
+server="vc.home"
+username="peter@vsphere.local"
+password_cmd = "powershell -NoProfile -Command Get-Secret 'vtui-vc' -AsPlainText"
+log_level="debug"
+```
 
 For a **one-off** session without editing the file, set **`VIM_PWD_CMD`** to the same kind of command; it overrides `password_cmd` from the file unless `VIM_PASSWORD` is set.
 

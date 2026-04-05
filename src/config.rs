@@ -96,7 +96,8 @@ fn load_config_file(path: &Path) -> Result<ConfigFile> {
 fn shell_command(cmd: &str) -> std::process::Command {
     #[cfg(windows)]
     {
-        let mut c = std::process::Command::new("cmd");
+        let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+        let mut c = std::process::Command::new(comspec);
         c.args(["/C", cmd]);
         c
     }
