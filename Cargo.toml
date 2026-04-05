@@ -1,6 +1,6 @@
 [package]
 name = "vtui"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 description = "Terminal UI for browsing VMware vSphere inventory"
 license = "Apache-2.0"

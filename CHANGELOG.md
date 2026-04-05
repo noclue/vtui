@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-04-05
+
 ### Added
 
 - **Non-blocking sparkline UI**: comprehensive architecture for moving all vSphere network operations off the main UI loop into background workers.
@@ -14,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Previously, a slow or hung vCenter response could freeze the entire UI — keystrokes would queue up and even quitting could stall. This is especially problematic during the exact infrastructure stress scenarios where operators need vtui most. Performance sparkline queries now run in a dedicated background worker instead of blocking the main event loop. Scrolling, filtering, searching, and periodic refreshes all remain responsive regardless of network latency. Sparklines populate within roughly 500ms of navigating to a new view, and stale results from a previous view are automatically discarded. This is the first phase of a broader effort to move all network operations off the UI thread.
 
 - **Saved connection profiles**: you can keep several vSphere connections in one config file instead of juggling environment variables. Pick a profile with `vtui <profile-name>`, set a default for plain `vtui`, or list profiles with `vtui --list`. Passwords can come from a small shell command (for example 1Password CLI, Bitwarden, or envchain) so secrets stay out of the file and off the command line; if you omit a password, vTUI asks for it when you start. Your existing `.env` / variable setup still works unchanged.
+
+- **Windows password integration**: documented and improved support for Windows PowerShell SecretManagement (`Get-Secret`) as a `password_cmd`, including setup steps for `Microsoft.PowerShell.SecretStore` and a working sample config.
 
 ## [0.2.3] - 2026-03-29
 
