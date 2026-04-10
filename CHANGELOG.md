@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* fix(prop-browser): preserve unicode in pretty-printed JSON
+
 ## [0.2.4] - 2026-04-05
 
 ### Added
