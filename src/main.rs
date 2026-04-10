@@ -1,11 +1,8 @@
 use crate::event::EventHandler;
 use anyhow::{Context, Result};
 use app::App;
-use log::{LevelFilter, info};
-use simplelog::{Config, WriteLogger};
+use log::info;
 use std::cell::RefCell;
-use std::fs::File;
-use std::path::Path;
 use std::rc::Rc;
 use vim_rs::core::client::{ClientBuilder, TransportMode, VimClientHandle};
 use vim_rs::core::pc_cache::CacheManager;
@@ -17,6 +14,7 @@ mod event;
 mod hints;
 mod history;
 mod inventory_path;
+mod logging;
 mod operation_types;
 mod ops;
 mod perf_worker;
@@ -51,7 +49,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    setup_logging(&resolved.log_level)?;
+    let rust_log_note = std::env::var_os("RUST_LOG").is_some();
+    let log_handle = logging::init(&resolved.logging, rust_log_note)?;
 
     info!("Starting vtui application!");
 
@@ -60,6 +59,7 @@ async fn main() -> Result<()> {
         Err(err) => {
             print_usage();
             eprintln!("Error initializing client: {}", err);
+            log_handle.shutdown();
             return Err(err);
         }
     };
@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
         .await;
     ratatui::restore();
     cache_manager.borrow_mut().destroy().await?;
+    log_handle.shutdown();
     app_result
 }
 
@@ -90,6 +91,7 @@ async fn init_vim_client(cfg: &config::ResolvedConfig) -> Result<VimClientHandle
         .basic_authn(cfg.username.as_str(), cfg.password.as_str())
         .app_details(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
         .transport(transport)
+        .wire_logging(cfg.logging.wire_mode)
         .build()
         .await
         .with_context(|| format!("Failed to connect to {}", cfg.server))?;
@@ -121,38 +123,13 @@ fn print_usage() {
     );
     println!("VIM_PROTOCOL: auto, json, or soap (default: auto)");
     println!(
-        "LOG_LEVEL: trace, debug, info, warn, error, off (default: info). Use 'trace' for wire logging."
+        "LOG_LEVEL: trace, debug, info, warn, error, or off — application log verbosity only (default: info)"
+    );
+    println!(
+        "Wire capture: set [logging.wire] in config.toml (mode = off|summary|detailed), not LOG_LEVEL."
     );
     println!();
     println!(
         "A `.env` file in the current or a parent directory can set variables; process env wins."
     );
-}
-
-fn setup_logging(level: &str) -> anyhow::Result<()> {
-    std::fs::create_dir_all("logs")?;
-
-    let log_file_path = Path::new("logs/vtui.log");
-
-    WriteLogger::init(
-        parse_log_level(level),
-        Config::default(),
-        File::create(log_file_path)?,
-    )
-    .map_err(|e| anyhow::anyhow!("Failed to initialize logger: {}", e))?;
-
-    info!("Logging system initialized");
-    Ok(())
-}
-
-fn parse_log_level(level: &str) -> LevelFilter {
-    match level {
-        "trace" => LevelFilter::Trace,
-        "debug" => LevelFilter::Debug,
-        "info" => LevelFilter::Info,
-        "warn" => LevelFilter::Warn,
-        "error" => LevelFilter::Error,
-        "off" => LevelFilter::Off,
-        _ => LevelFilter::Info,
-    }
 }

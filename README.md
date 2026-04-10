@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releas
 - Export object properties to a timestamped JSON file with `j`
 - Navigate backward through browsing history with `Backspace`
 - Switch resource types with `r`
-- File logging to `logs/vtui.log`
+- File logging under the platform state directory (see **Logging** below): separate **application** and **wire** logs with rotation and retention
 
 ## Configuration
 
@@ -88,7 +88,7 @@ Both can be used together: **anything set in the process environment overrides t
 | `password_cmd` | no | Shell command whose **standard output** (first line, trailing newline stripped) is the password |
 | `insecure` | no | If `true`, TLS certificate verification is skipped (default `false`) |
 | `protocol` | no | `auto`, `json`, or `soap` (default `auto`) |
-| `log_level` | no | Same values as `LOG_LEVEL` below (default `info`) |
+| `log_level` | no | **Deprecated:** use global `[logging].level` instead (see **Logging**). Still read for one release as a migration aid when `[logging].level` is absent. |
 
 **Commands**
 
@@ -172,9 +172,49 @@ These apply whether or not you use a config file. When both are set, **environme
 - `VIM_PWD_CMD` — Shell command whose stdout is the password (same idea as `password_cmd` in TOML)
 - `VIM_INSECURE` — If set, only the literal value `false` enables TLS verification; any other value skips verification. If **unset**, the profile’s `insecure` from the file is used, or in env-only mode verification is enabled by default.
 - `VIM_PROTOCOL` — `auto`, `json`, or `soap` (default `auto`)
-- `LOG_LEVEL` — `trace`, `debug`, `info`, `warn`, `error`, or `off`
-  - With `LOG_LEVEL=debug`, VM action prefetch logs to `logs/vtui.log` under targets **`vm_actions`** (steps: `name()`, `disabled_method()`, `resolve_inventory_path`) and **`inventory_path`** (PropertyCollector retrieve + path build). The error popup also includes `anyhow` context naming the failing step.
-  - At `LOG_LEVEL=trace`, vSphere wire logs can include embedded NUL bytes in SOAP payloads; vTUI writes those as the two-character escape `\0` so the log file stays plain text–friendly.
+- `LOG_LEVEL` — `trace`, `debug`, `info`, `warn`, `error`, or `off` — **application log verbosity only** (default `info`). Invalid or empty values are ignored with a warning; resolution then follows `config.toml` and defaults. Wire capture is **not** controlled by `LOG_LEVEL`; use `[logging.wire]` in `config.toml` (see **Logging**).
+  - With `LOG_LEVEL=debug` (or a `[logging]` / legacy profile level of `debug`), VM action prefetch logs under targets **`vm_actions`** (steps: `name()`, `disabled_method()`, `resolve_inventory_path`) and **`inventory_path`** (PropertyCollector retrieve + path build). The error popup also includes `anyhow` context naming the failing step.
+  - Dedicated **wire** logs (`vim_rs::wire::json` / `vim_rs::wire::soap`) use `[logging.wire] mode = summary|detailed` and land in `vtui-wire.log`. At `detailed`, full bodies may appear for non-session traffic; `SessionManager` remains summary-only. SOAP payloads may contain NUL bytes; they are written as the two-character escape `\0` in log files.
+
+### Logging
+
+Logs are written under a **per-user state directory** (not the process current working directory):
+
+| Platform | Directory |
+| -------- | --------- |
+| macOS / Linux | `$XDG_STATE_HOME/vtui/logs/` if `XDG_STATE_HOME` is set and absolute, otherwise `~/.local/state/vtui/logs/` |
+| Windows | `%LOCALAPPDATA%\vtui\logs\` |
+
+On disk, the active files use flexi_logger’s rotation naming, for example **`vtui-app_rCURRENT.log`** and **`vtui-wire_rCURRENT.log`**: the **`r`** is part of the library’s **`rCURRENT`** infix (the file currently receiving writes). Older rotated files get different infixes (e.g. numbered or timestamped). Logs **append** across restarts; rotation, retention, and optional **gzip** of rotated files follow your `[logging.app]` / `[logging.wire]` settings.
+
+Configure in **`config.toml`** (global, not per profile):
+
+```toml
+[logging]
+level = "info"  # application level; omit to default to info (after LOG_LEVEL / legacy migration)
+
+[logging.app]
+rotate_daily = true
+max_size_mib = 10
+keep_files = 21
+compress = true
+
+[logging.wire]
+mode = "off"    # off | summary | detailed — maps to vim_rs::WireLoggingMode for the client
+rotate_daily = true
+max_size_mib = 1024
+keep_files = 2
+compress = true
+
+# Optional: raise verbosity for specific log targets (app sink only; prefix match, longest prefix wins)
+[[logging.filters]]
+target = "vim_rs::core"
+level = "debug"
+```
+
+**Precedence:** `LOG_LEVEL` (env) overrides `[logging].level` for the app only. Legacy per-environment `log_level` in a profile is used only when the global `[logging].level` key is absent and `LOG_LEVEL` is unset; a deprecation message is printed.
+
+**Note:** `RUST_LOG` is **not** used for vTUI logger configuration; if set, a startup note explains that explicit vTUI settings apply instead.
 
 ## Usage
 
