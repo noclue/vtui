@@ -482,11 +482,12 @@ fn pretty_print_json(json: &str) -> String {
                     .iter()
                     .copied()
                     .find(|c| !c.is_ascii_whitespace());
-                if let Some(next_ch) = next_meaningful {
-                    if next_ch != '}' && next_ch != ']' {
-                        out.push('\n');
-                        write_indent(&mut out, indent);
-                    }
+                if let Some(next_ch) = next_meaningful
+                    && next_ch != '}'
+                    && next_ch != ']'
+                {
+                    out.push('\n');
+                    write_indent(&mut out, indent);
                 }
             }
             '}' | ']' => {
@@ -916,7 +917,6 @@ mod snapshot_tests {
     }
 }
 
-
 #[cfg(test)]
 mod unicode_tests {
     use super::*;
@@ -955,14 +955,8 @@ mod unicode_tests {
         .into_iter()
         .collect();
 
-        vapp_config.insert(
-            "_typeName".to_string(),
-            string_value("VmConfigInfo"),
-        );
-        vapp_config.insert(
-            "eula".to_string(),
-            Value::Array(eula),
-        );
+        vapp_config.insert("_typeName".to_string(), string_value("VmConfigInfo"));
+        vapp_config.insert("eula".to_string(), Value::Array(eula));
 
         config.insert(
             "_typeName".to_string(),
@@ -1028,7 +1022,10 @@ mod unicode_tests {
 
         let pretty = pretty_print_json(compact);
 
-        assert_eq!(pretty, "{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": {\n    \"c\": true\n  }\n}");
+        assert_eq!(
+            pretty,
+            "{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": {\n    \"c\": true\n  }\n}"
+        );
     }
 
     #[test]
@@ -1076,7 +1073,8 @@ mod unicode_tests {
         let Value::Object(config) = root.get("config").expect("config exists") else {
             panic!("expected config object");
         };
-        let Value::Object(vapp_config) = config.get("vAppConfig").expect("vAppConfig exists") else {
+        let Value::Object(vapp_config) = config.get("vAppConfig").expect("vAppConfig exists")
+        else {
             panic!("expected vAppConfig object");
         };
         let Value::Array(eula) = vapp_config.get("eula").expect("eula exists") else {
@@ -1120,10 +1118,9 @@ mod unicode_tests {
     #[test]
     fn generate_json_filename_preserves_unicode_name() {
         let mut state = test_state();
-        state.properties.insert(
-            "name".to_string(),
-            string_value("Appliance © “quoted”"),
-        );
+        state
+            .properties
+            .insert("name".to_string(), string_value("Appliance © “quoted”"));
 
         let filename = state.generate_json_filename().expect("filename generated");
 

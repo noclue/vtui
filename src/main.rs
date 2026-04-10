@@ -17,6 +17,8 @@ mod event;
 mod hints;
 mod history;
 mod inventory_path;
+mod operation_types;
+mod ops;
 mod perf_worker;
 mod prop_browser;
 mod resource_browser;

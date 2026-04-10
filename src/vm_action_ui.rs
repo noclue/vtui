@@ -1,5 +1,6 @@
 //! VM power action popup, confirmation dialog, and rendering.
 
+use crate::operation_types::OperationId;
 use crate::vm_power_actions::{VmActionContext, VmPowerAction};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
@@ -20,6 +21,8 @@ pub struct VmActionUi {
 enum VmActionLayer {
     #[default]
     Closed,
+    /// Prefetch running in the ops worker.
+    LoadingPrefetch { request_id: OperationId },
     Menu {
         ctx: VmActionContext,
         actions: Vec<VmPowerAction>,
@@ -59,6 +62,18 @@ impl VmActionUi {
         };
     }
 
+    pub fn start_prefetch_loading(&mut self, request_id: OperationId) {
+        self.layer = VmActionLayer::LoadingPrefetch { request_id };
+    }
+
+    /// Returns `true` if this layer is still showing prefetch for `request_id`.
+    pub fn prefetch_is_pending(&self, request_id: OperationId) -> bool {
+        matches!(
+            &self.layer,
+            VmActionLayer::LoadingPrefetch { request_id: rid } if *rid == request_id
+        )
+    }
+
     pub fn close(&mut self) {
         self.layer = VmActionLayer::Closed;
     }
@@ -66,6 +81,22 @@ impl VmActionUi {
     pub fn render(&mut self, frame: &mut Frame) {
         match &mut self.layer {
             VmActionLayer::Closed => {}
+            VmActionLayer::LoadingPrefetch { .. } => {
+                let popup_area = centered_rect(52, 7, frame.area());
+                let paragraph = Paragraph::new("\n  Loading VM actions…")
+                    .block(
+                        Block::default()
+                            .title("VM actions")
+                            .style(Style::default().bg(Color::DarkGray))
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(Style::default().fg(Color::Yellow))
+                            .title_bottom(Line::from("Esc close")),
+                    )
+                    .alignment(Alignment::Center);
+                frame.render_widget(Clear, popup_area);
+                frame.render_widget(paragraph, popup_area);
+            }
             VmActionLayer::Menu {
                 ctx,
                 actions,
@@ -146,6 +177,13 @@ impl VmActionUi {
     pub fn handle_key(&mut self, key: &KeyEvent) -> VmActionKeyOutcome {
         match &mut self.layer {
             VmActionLayer::Closed => VmActionKeyOutcome::Ignored,
+            VmActionLayer::LoadingPrefetch { .. } => match key.code {
+                KeyCode::Esc => {
+                    self.close();
+                    VmActionKeyOutcome::Close
+                }
+                _ => VmActionKeyOutcome::Consumed,
+            },
             VmActionLayer::Menu {
                 ctx,
                 actions,

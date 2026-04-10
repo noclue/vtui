@@ -1,7 +1,9 @@
+use crate::operation_types::OperationId;
 use crate::prop_browser::PropertyHistoryRecord;
 use crate::resource_browser::EventBrowserPayload;
 use crate::resource_browser::HistoryRecord as ResourceHistoryRecord;
 use crate::resource_type::ResourceType;
+use crate::vm_power_actions::VmActionContext;
 use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
 use ratatui::crossterm::event::Event as CrosstermEvent;
@@ -57,6 +59,28 @@ pub enum AppEvent {
     /// Background perf worker completed a poll cycle for `generation`.
     PerfResult {
         generation: u64,
+    },
+
+    // --- Async ops facility (see `crate::ops`) ---
+    /// VM action prefetch finished successfully (`request_id` matches UI submission).
+    VmActionPrefetchSucceeded {
+        request_id: OperationId,
+        context: VmActionContext,
+    },
+    /// VM action prefetch failed (`request_id` matches UI submission).
+    VmActionPrefetchFailed {
+        request_id: OperationId,
+        error: String,
+    },
+    /// A queued inventory operation completed successfully.
+    OperationSucceeded {
+        op_id: OperationId,
+        message: String,
+    },
+    /// A queued inventory operation failed.
+    OperationFailed {
+        op_id: OperationId,
+        error: String,
     },
 }
 

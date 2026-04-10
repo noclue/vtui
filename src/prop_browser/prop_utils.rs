@@ -45,7 +45,9 @@ mod tests {
 
     #[test]
     fn test_to_json_value() {
-        let value = VimAny::Value(ValueElements::PrimitiveString("test © “quoted”".to_string()));
+        let value = VimAny::Value(ValueElements::PrimitiveString(
+            "test © “quoted”".to_string(),
+        ));
         let json_value = to_json_value(&value, "test").unwrap();
         match json_value {
             Value::String(s) => assert_eq!(s, "test © “quoted”"),
@@ -57,11 +59,11 @@ mod tests {
         let value = VimAny::Object(Box::new(VmConfigInfo {
             product: None,
             property: None,
-            ip_assignment: VAppIpAssignmentInfo { 
-                supported_allocation_scheme: None, 
-                ip_allocation_policy: None, 
-                supported_ip_protocol: None, 
-                ip_protocol: None 
+            ip_assignment: VAppIpAssignmentInfo {
+                supported_allocation_scheme: None,
+                ip_allocation_policy: None,
+                supported_ip_protocol: None,
+                ip_protocol: None,
             },
             eula: Some(Vec::from(["test © “quoted”".to_string()])),
             ovf_section: None,

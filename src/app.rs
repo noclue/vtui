@@ -2,6 +2,9 @@ use crate::body_pane::BodyPane;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
+use crate::operation_types::OperationId;
+use crate::ops::types::{InventoryOperation, OperationRequest};
+use crate::ops::{OpsHandle, spawn_ops_supervisor};
 use crate::perf_worker::{PerfRequest, run_perf_worker};
 use crate::prop_browser::{
     BrowserMetadata, PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager,
@@ -11,7 +14,7 @@ use crate::resource_browser::event_to_browser_object;
 use crate::resource_type::{ResourceSelectionState, ResourceType};
 use crate::search::SearchState;
 use crate::vm_action_ui::{self, VmActionKeyOutcome, VmActionUi};
-use crate::vm_power_actions::{VmPowerAction, execute_vm_power_action, prefetch_vm_action_context};
+use crate::vm_power_actions::VmPowerAction;
 use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEventKind};
 use log::{debug, info, warn};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -44,6 +47,13 @@ pub struct App {
     history: HistoryManager,
     /// VM power action modals (`x` from VM grid).
     vm_action_ui: VmActionUi,
+    /// Outstanding VM power action submitted to [`crate::ops`] (modal already closed).
+    vm_action_pending_execute: Option<OperationId>,
+    /// Monotonic id generator for ops requests.
+    next_operation_id: OperationId,
+    /// Submit work to the ops supervisor (sender dropped on quit).
+    ops: OpsHandle,
+    ops_worker: tokio::task::JoinHandle<()>,
     /// Blocking error popup (e.g. prefetch or action failure).
     error_popup: Option<String>,
     /// Redraw once after async app work so modals appear without waiting for another event.
@@ -74,6 +84,9 @@ impl App {
             run_perf_worker(client_for_worker, perf_rx, event_tx).await;
         });
 
+        let event_tx_ops = events.clone_event_sender();
+        let (ops, ops_worker) = spawn_ops_supervisor(client.clone(), event_tx_ops);
+
         // Create a new ResourceManager instance
         let resource_mgr = ResourceManager::new(
             client.clone(),
@@ -91,6 +104,10 @@ impl App {
             resource_selection_state: ResourceSelectionState::new(),
             history: HistoryManager::new(20), // TODO: Make this configurable
             vm_action_ui: VmActionUi::default(),
+            vm_action_pending_execute: None,
+            next_operation_id: 1,
+            ops,
+            ops_worker,
             error_popup: None,
             pending_redraw: false,
             perf_generation: 1,
@@ -99,6 +116,16 @@ impl App {
         };
         app.signal_perf_worker();
         Ok(app)
+    }
+
+    fn next_op_id(&mut self) -> OperationId {
+        let id = self.next_operation_id;
+        self.next_operation_id = self.next_operation_id.saturating_add(1);
+        id
+    }
+
+    async fn submit_op(&mut self, req: OperationRequest) -> Result<(), crate::ops::OpsSubmitError> {
+        self.ops.submit(req).await
     }
 
     fn signal_perf_worker(&mut self) {
@@ -142,6 +169,8 @@ impl App {
             }
             AppEvent::Quit => {
                 info!("Quitting...");
+                self.ops.shutdown();
+                self.ops_worker.abort();
                 self.perf_worker.abort();
                 self.events.shutdown().await?;
                 self.should_quit = true
@@ -191,14 +220,47 @@ impl App {
                 self.signal_perf_worker();
             }
             AppEvent::OpenVmActions(vm_ref) => {
-                match prefetch_vm_action_context(self.client.clone(), vm_ref).await {
-                    Ok(ctx) => {
-                        let actions = VmPowerAction::visible(&ctx.disabled_method);
-                        self.vm_action_ui.open_menu(ctx, actions);
-                    }
-                    Err(e) => {
-                        self.error_popup = Some(format!("{e:#}"));
-                    }
+                let request_id = self.next_op_id();
+                self.vm_action_ui.start_prefetch_loading(request_id);
+                let req = OperationRequest::PrefetchVmActions {
+                    request_id,
+                    vm: vm_ref,
+                };
+                if self.submit_op(req).await.is_err() {
+                    self.vm_action_ui.close();
+                    self.error_popup =
+                        Some("Could not queue VM action prefetch (ops worker unavailable).".into());
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::VmActionPrefetchSucceeded {
+                request_id,
+                context,
+            } => {
+                if self.vm_action_ui.prefetch_is_pending(request_id) {
+                    let actions = VmPowerAction::visible(&context.disabled_method);
+                    self.vm_action_ui.open_menu(context, actions);
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::VmActionPrefetchFailed { request_id, error } => {
+                if self.vm_action_ui.prefetch_is_pending(request_id) {
+                    self.vm_action_ui.close();
+                    self.error_popup = Some(error);
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::OperationSucceeded { op_id, message } => {
+                if self.vm_action_pending_execute == Some(op_id) {
+                    self.vm_action_pending_execute = None;
+                    debug!("VM op succeeded: {}", message);
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::OperationFailed { op_id, error } => {
+                if self.vm_action_pending_execute == Some(op_id) {
+                    self.vm_action_pending_execute = None;
+                    self.error_popup = Some(error);
                 }
                 self.pending_redraw = true;
             }
@@ -357,10 +419,17 @@ impl App {
                         return Ok(());
                     }
                     VmActionKeyOutcome::Execute { vm, action } => {
-                        if let Err(e) =
-                            execute_vm_power_action(self.client.clone(), &vm, action).await
-                        {
-                            self.error_popup = Some(format!("{e:#}"));
+                        let op_id = self.next_op_id();
+                        self.vm_action_pending_execute = Some(op_id);
+                        let req = OperationRequest::ExecuteInventoryOperation {
+                            op_id,
+                            op: InventoryOperation::Vm { vm, action },
+                        };
+                        if self.submit_op(req).await.is_err() {
+                            self.vm_action_pending_execute = None;
+                            self.error_popup = Some(
+                                "Could not queue VM power action (ops worker unavailable).".into(),
+                            );
                         }
                         self.pending_redraw = true;
                         return Ok(());
