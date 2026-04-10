@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* fix(prop-browser): preserve unicode in pretty-printed JSON
+- **preserve unicode in pretty-printed JSON** - fixed a bug that corrupted
+the unicode contents of JSON dumps
+- **background VM action prefetch and execution off the UI loop** Introduce
+an async operations facility under src/ops so vSphere work for the VM 
+power-action flow no longer blocks the main event loop (terminal input,
+property updates, redraws).
+
+
 
 ## [0.2.4] - 2026-04-05
 
