@@ -23,6 +23,7 @@ const EXPAND_VM: &str = "v vm";
 const EXPAND_TASK: &str = "t task";
 const EXPAND_EVENT: &str = "e events";
 const VM_ACTIONS: &str = "x actions";
+const VM_SUMMARY: &str = "s summary";
 
 const CLUSTER_EXPAND_HINTS: &[&str] = &[
     EXPAND_NETWORK,
@@ -41,7 +42,7 @@ const HOST_EXPAND_HINTS: &[&str] = &[
 const DATASTORE_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK, EXPAND_EVENT];
 const NETWORK_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK];
 
-const VM_EXPAND_HINTS: &[&str] = &[VM_ACTIONS, EXPAND_TASK, EXPAND_EVENT];
+const VM_EXPAND_HINTS: &[&str] = &[VM_SUMMARY, VM_ACTIONS, EXPAND_TASK, EXPAND_EVENT];
 pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static str] {
     match resource_type {
         ResourceType::Cluster => CLUSTER_EXPAND_HINTS,

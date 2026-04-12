@@ -341,6 +341,16 @@ impl ResourceManager {
                     new_perf_view: new_view,
                 });
             }
+            KeyCode::Char('s') if self.resource_type() == ResourceType::VirtualMachine => {
+                if let Some((vm_ref, _)) = self.selected_item() {
+                    let label = format!("{}:{}", vm_ref.r#type.as_str(), vm_ref.value);
+                    debug!(
+                        target: "vm_summary",
+                        "vm summary: key 's' open vm={label}"
+                    );
+                    events.send(AppEvent::OpenVmSummary(vm_ref));
+                }
+            }
             KeyCode::Char('x') if self.resource_type() == ResourceType::VirtualMachine => {
                 if let Some((vm_ref, _)) = self.selected_item() {
                     events.send(AppEvent::OpenVmActions(vm_ref));

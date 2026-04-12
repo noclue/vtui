@@ -1,10 +1,10 @@
 use crate::resource_browser::tabular_data::TableDataSource;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Margin, Rect};
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Cell, HighlightSpacing, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    Block, Cell, HighlightSpacing, Padding, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
     StatefulWidget, Table, TableState,
 };
 use vim_rs::types::enums::MoTypesEnum;
@@ -92,7 +92,10 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
                     .alignment(ratatui::layout::Alignment::Right),
             )
             .title_bottom(hint)
-            .border_style(Style::default().fg(Color::Gray));
+            .border_style(Style::default().fg(Color::Gray))
+            .padding(Padding::right(1));
+
+        let inner = block.inner(area);
 
         let sort_setting = self.resources.get_sort_setting();
         let header_row = self.resources.header_row();
@@ -127,7 +130,7 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
 
         let mut sb_state = ScrollbarState::new(self.resources.len())
             .position(state.selected().unwrap_or(0))
-            .viewport_content_length(area.height as usize);
+            .viewport_content_length(inner.height.saturating_sub(1) as usize);
 
         let rows = self.resources.iter();
 
@@ -142,17 +145,17 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
 
         let sb = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(None)
-            .end_symbol(None);
+            .end_symbol(None)
+            .track_style(Style::default().bg(Color::DarkGray).fg(Color::DarkGray))
+            .thumb_style(Style::default().bg(Color::Gray).fg(Color::Gray));
 
-        StatefulWidget::render(
-            sb,
-            area.inner(Margin {
-                vertical: 1,
-                horizontal: 0,
-            }),
-            buf,
-            &mut sb_state,
-        );
+        let sb_area = Rect {
+            x: inner.x + inner.width,
+            y: inner.y,
+            width: 1,
+            height: inner.height,
+        };
+        StatefulWidget::render(sb, sb_area, buf, &mut sb_state);
     }
 }
 

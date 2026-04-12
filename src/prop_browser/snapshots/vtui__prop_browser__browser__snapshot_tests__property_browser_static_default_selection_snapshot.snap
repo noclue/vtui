@@ -21,4 +21,4 @@ expression: "draw_property_browser(sample_metadata(), sample_root_object(), None
 "│                                                                            │"
 "│                                                                            │"
 "│                                                                            │"
-"└ vTUI version: 0.2.4 ──────────────────→ - expand, ← - collapse, ↑↓ - scroll┘"
+"└ vTUI version: 0.2.5 ──────────────────→ - expand, ← - collapse, ↑↓ - scroll┘"

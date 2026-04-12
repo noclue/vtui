@@ -2,7 +2,7 @@ mod cluster;
 mod data_loaders;
 mod datastore;
 pub mod events;
-mod formatting;
+pub(crate) mod formatting;
 mod hints;
 mod host;
 mod indexed_cache;

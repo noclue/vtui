@@ -11,7 +11,7 @@ use ratatui::layout::Rect;
 use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, ScrollbarOrientation, StatefulWidget};
+use ratatui::widgets::{Block, Padding, ScrollbarOrientation, StatefulWidget};
 use std::borrow::Cow;
 use std::io::Write;
 use std::mem;
@@ -439,8 +439,8 @@ fn pretty_print_json(json: &str) -> String {
     let mut indent = 0usize;
     let mut in_string = false;
     let mut escape_next = false;
-    let bytes = json.as_bytes();
-    let len = bytes.len();
+    let chars: Vec<char> = json.chars().collect();
+    let len = chars.len();
     let mut i = 0;
 
     fn write_indent(s: &mut String, level: usize) {
@@ -450,7 +450,7 @@ fn pretty_print_json(json: &str) -> String {
     }
 
     while i < len {
-        let ch = bytes[i] as char;
+        let ch = chars[i];
 
         if escape_next {
             out.push(ch);
@@ -478,13 +478,16 @@ fn pretty_print_json(json: &str) -> String {
             '{' | '[' => {
                 indent += 1;
                 out.push(ch);
-                let next_meaningful = bytes[i + 1..].iter().position(|b| !b.is_ascii_whitespace());
-                if let Some(pos) = next_meaningful {
-                    let next_ch = bytes[i + 1 + pos] as char;
-                    if next_ch != '}' && next_ch != ']' {
-                        out.push('\n');
-                        write_indent(&mut out, indent);
-                    }
+                let next_meaningful = chars[i + 1..]
+                    .iter()
+                    .copied()
+                    .find(|c| !c.is_ascii_whitespace());
+                if let Some(next_ch) = next_meaningful
+                    && next_ch != '}'
+                    && next_ch != ']'
+                {
+                    out.push('\n');
+                    write_indent(&mut out, indent);
                 }
             }
             '}' | ']' => {
@@ -561,7 +564,8 @@ impl StatefulWidget for PropertyBrowser<'_> {
                             Style::default().fg(Color::Cyan),
                         )
                         .alignment(Alignment::Right),
-                    ),
+                    )
+                    .padding(Padding::right(1)),
             )
             .highlight_style(self.highlight_style)
             .highlight_symbol(self.highlight_symbol);
@@ -570,8 +574,9 @@ impl StatefulWidget for PropertyBrowser<'_> {
             widget = widget.experimental_scrollbar(Some(
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
                     .begin_symbol(None)
-                    .track_symbol(None)
-                    .end_symbol(None),
+                    .end_symbol(None)
+                    .track_style(Style::default().bg(Color::DarkGray).fg(Color::DarkGray))
+                    .thumb_style(Style::default().bg(Color::Gray).fg(Color::Gray)),
             ));
         }
 
@@ -911,5 +916,218 @@ mod snapshot_tests {
             sample_root_object(),
             Some(ts),
         ));
+    }
+}
+
+#[cfg(test)]
+mod unicode_tests {
+    use super::*;
+    use indexmap::IndexMap;
+    use miniserde::json::{Array, Object, Value};
+    use vim_rs::types::{enums::MoTypesEnum, structs::ManagedObjectReference};
+
+    fn test_state() -> PropertyBrowserState {
+        PropertyBrowserState {
+            obj: Some(ManagedObjectReference {
+                r#type: MoTypesEnum::VirtualMachine,
+                value: "vm-42".to_string(),
+            }),
+            properties: IndexMap::new(),
+            metadata: BrowserMetadata {
+                title: String::new(),
+                dump_prefix: String::new(),
+            },
+            items: Vec::new(),
+            state: TreeState::default(),
+        }
+    }
+
+    fn string_value(input: &str) -> Value {
+        Value::String(input.to_string())
+    }
+
+    fn nested_vm_config_value() -> Value {
+        let mut root = Object::new();
+        let mut config = Object::new();
+        let mut vapp_config = Object::new();
+        let eula: Array = vec![
+            string_value("Foundagtion Agreement © “quoted”"),
+            string_value("Part 2: Copyright © 2026 Broadcom."),
+        ]
+        .into_iter()
+        .collect();
+
+        vapp_config.insert("_typeName".to_string(), string_value("VmConfigInfo"));
+        vapp_config.insert("eula".to_string(), Value::Array(eula));
+
+        config.insert(
+            "_typeName".to_string(),
+            string_value("VirtualMachineConfigInfo"),
+        );
+        config.insert("vAppConfig".to_string(), Value::Object(vapp_config));
+
+        root.insert("config".to_string(), Value::Object(config));
+        Value::Object(root)
+    }
+
+    #[test]
+    fn pretty_print_preserves_copyright_symbol() {
+        let compact = r#"{"eula":["Copyright © 2026 Broadcom."]}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert!(pretty.contains("Copyright © 2026 Broadcom."));
+        assert!(!pretty.contains("Â©"));
+    }
+
+    #[test]
+    fn pretty_print_preserves_smart_quotes() {
+        let compact = r#"{"eula":["“Foundation Agreement”"]}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert!(pretty.contains("“Foundation Agreement”"));
+        assert!(!pretty.contains("â€œ"));
+        assert!(!pretty.contains("â€\u{9d}"));
+    }
+
+    #[test]
+    fn pretty_print_keeps_escaped_quotes_inside_strings() {
+        let compact = r#"{"text":"He said \"hello\"."}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert!(pretty.contains(r#"He said \"hello\"."#));
+    }
+
+    #[test]
+    fn pretty_print_keeps_backslashes_inside_strings() {
+        let compact = r#"{"path":"C:\\Program Files\\Broadcom"}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert!(pretty.contains(r#"C:\\Program Files\\Broadcom"#));
+    }
+
+    #[test]
+    fn pretty_print_keeps_newline_escapes_inside_strings() {
+        let compact = r#"{"eula":"Line 1\nLine 2\nLine 3"}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert!(pretty.contains(r#"Line 1\nLine 2\nLine 3"#));
+    }
+
+    #[test]
+    fn pretty_print_removes_whitespace_outside_strings() {
+        let compact = "{  \"a\" : [ 1 , 2 ] , \"b\" : { \"c\" : true } }";
+
+        let pretty = pretty_print_json(compact);
+
+        assert_eq!(
+            pretty,
+            "{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": {\n    \"c\": true\n  }\n}"
+        );
+    }
+
+    #[test]
+    fn pretty_print_keeps_spaces_inside_strings() {
+        let compact = r#"{"text":"  keep   inner   spaces  "}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert!(pretty.contains(r#""  keep   inner   spaces  ""#));
+    }
+
+    #[test]
+    fn pretty_print_handles_empty_arrays_and_objects() {
+        let compact = r#"{"array":[],"object":{}}"#;
+
+        let pretty = pretty_print_json(compact);
+
+        assert_eq!(pretty, "{\n  \"array\": [\n  ],\n  \"object\": {\n  }\n}");
+    }
+
+    #[test]
+    fn pretty_print_preserves_unicode_in_nested_vm_config_shape() {
+        let value = nested_vm_config_value();
+        let compact = miniserde::json::to_string(&value);
+
+        let pretty = pretty_print_json(&compact);
+
+        assert!(pretty.contains("Foundagtion Agreement © “quoted”"));
+        assert!(pretty.contains("Part 2: Copyright © 2026 Broadcom."));
+        assert!(!pretty.contains("Â©"));
+        assert!(!pretty.contains("â€œ"));
+        assert!(!pretty.contains("â€"));
+    }
+
+    #[test]
+    fn pretty_printed_nested_vm_config_round_trips_without_mojibake() {
+        let value = nested_vm_config_value();
+        let compact = miniserde::json::to_string(&value);
+        let pretty = pretty_print_json(&compact);
+
+        let reparsed: Value = miniserde::json::from_str(&pretty).expect("pretty JSON parses");
+        let Value::Object(root) = reparsed else {
+            panic!("expected root object");
+        };
+        let Value::Object(config) = root.get("config").expect("config exists") else {
+            panic!("expected config object");
+        };
+        let Value::Object(vapp_config) = config.get("vAppConfig").expect("vAppConfig exists")
+        else {
+            panic!("expected vAppConfig object");
+        };
+        let Value::Array(eula) = vapp_config.get("eula").expect("eula exists") else {
+            panic!("expected eula array");
+        };
+
+        assert_eq!(eula.len(), 2);
+        let Value::String(first) = &eula[0] else {
+            panic!("expected first eula entry to be a string");
+        };
+        let Value::String(second) = &eula[1] else {
+            panic!("expected second eula entry to be a string");
+        };
+        assert_eq!(first, "Foundagtion Agreement © “quoted”");
+        assert_eq!(second, "Part 2: Copyright © 2026 Broadcom.");
+    }
+
+    #[test]
+    fn generate_json_filename_sanitizes_reserved_characters() {
+        let mut state = test_state();
+        state.properties.insert(
+            "name".to_string(),
+            string_value(r#"bad/name\with:reserved*?"<>|chars"#),
+        );
+
+        let filename = state.generate_json_filename().expect("filename generated");
+
+        assert!(filename.starts_with("bad_name_with_reserved______chars_VirtualMachine_vm-42_"));
+        assert!(filename.ends_with(".json"));
+        assert!(!filename.contains('/'));
+        assert!(!filename.contains('\\'));
+        assert!(!filename.contains(':'));
+        assert!(!filename.contains('*'));
+        assert!(!filename.contains('?'));
+        assert!(!filename.contains('"'));
+        assert!(!filename.contains('<'));
+        assert!(!filename.contains('>'));
+        assert!(!filename.contains('|'));
+    }
+
+    #[test]
+    fn generate_json_filename_preserves_unicode_name() {
+        let mut state = test_state();
+        state
+            .properties
+            .insert("name".to_string(), string_value("Appliance © “quoted”"));
+
+        let filename = state.generate_json_filename().expect("filename generated");
+
+        assert!(filename.starts_with("Appliance © “quoted”_VirtualMachine_vm-42_"));
+        assert!(filename.ends_with(".json"));
+        assert!(!filename.contains("Â©"));
     }
 }

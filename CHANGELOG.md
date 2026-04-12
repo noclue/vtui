@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-04-12
+
+### Added
+
+- **VM Summary** (`s` on the **Virtual Machine** inventory table): opens a centered popup with a consolidated view of the selected VM—name and MO id, primary IP(s), overall status, power state and uptime, guest OS, vCPU count and CPU usage (MHz), a one-line **VMware Tools** summary, host memory in use versus configured size, resolved **host** name, provisioned **disk** usage, plus scrollable **Networking** and **Disks** tables. Networking lists each NIC (label, network name when it can be resolved from the backing, MAC, guest IPs); disks list virtual disks with path/backing and datastore names when available. The vSphere work runs **asynchronously** so typing, search, and redraws stay responsive; you briefly see “Loading VM summary…” until data arrives. **Esc** or **q** closes the popup; while it is open, **↑**/**↓**, **j**/**k**, **Page Up**/**Page Down**, **Home**/**End**, **g**/**G**, and **Ctrl+B**/**Ctrl+F** scroll the content.
+- **VM Summary networking labels** include standard port groups, distributed port groups (with a clear placeholder when the port group name is not yet resolved), NSX-style **opaque** networks (type and opaque network id), and **SR-IOV** (physical or virtual function device name, or a PCI-style id when the name is empty). If the backing cannot be interpreted, the network cell may show **-** as before.
+
+### Changed
+
+- **Demand-driven PropertyCollector and performance polling:** terminal input and PropertyCollector `WaitForUpdatesEx` long-polls no longer share one `tokio::select!`, so keystrokes no longer cancel and restart in-flight waits (which previously amplified server load during UI activity). A `watch` channel gates when long-polls run: **on** for the resource inventory table and the managed-object property browser, **off** for the static/event JSON property browser and during shutdown. Long-polls use a **60-second** server-side wait window instead of a short timeout loop. Performance (`QueryPerf`) requests are **explicitly cleared** when perf should stop (property browsers, **VM summary** popup open, or other pauses) so the background worker does not keep polling with a stale visible-row set. `refresh_polling_demand()` centralizes these rules; `polling_policy` unit tests document PropertyCollector vs perf demand.
+- **Suppress redundant ad-hoc perf refreshes:** changing the selected row within the same visible VM/Host window no longer re-arms the background `PerformanceManager` worker. vTUI now only sends an immediate perf refresh when the effective observed entity set, pause/running state, or perf generation actually changes.
+- **Logging (breaking operational change):** vTUI no longer writes `logs/vtui.log` under the current working directory. Application and wire diagnostics use **flexi_logger** with append, rotation, retention, and optional compression under the platform state directory: on Unix-like systems `$XDG_STATE_HOME/vtui/logs/` (or `~/.local/state/vtui/logs/` when `XDG_STATE_HOME` is unset or not absolute), and on Windows `%LOCALAPPDATA%\vtui\logs\`. Filenames follow flexi_logger conventions (e.g. current `vtui-app` / `vtui-wire` logs plus rotated siblings). Timestamps are **UTC** with millisecond precision and a `Z` suffix. Configure verbosity and rotation in a global `[logging]` section of `config.toml`; `LOG_LEVEL` remains supported and applies application logging only. Wire capture is configured with `[logging.wire] mode` (`off`, `summary`, `detailed`) and is passed to `vim_rs::WireLoggingMode` on `ClientBuilder::wire_logging`; targets `vim_rs::wire::json` and `vim_rs::wire::soap` are routed to `vtui-wire.log` without flooding `vtui-app.log`. Per-target overrides use `[[logging.filters]]`. Legacy `[environments.*].log_level` is still read for one release when no global `[logging].level` and no `LOG_LEVEL` apply, with a deprecation warning. **`RUST_LOG`** is intentionally ignored for vTUI’s own logger setup (a note is printed if set). If file logging cannot be initialized, vTUI warns and falls back to stderr-only logging instead of aborting.
+- **Background VM action prefetch and execution off the UI loop:** introduce an async operations facility under `src/ops` so vSphere work for the VM power-action flow no longer blocks the main event loop (terminal input, property updates, redraws).
+
+### Fixed
+
+- Preserve Unicode in pretty-printed JSON dumps (previously corrupted non-ASCII content).
+
 ## [0.2.4] - 2026-04-05
 
 ### Added
@@ -16,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Previously, a slow or hung vCenter response could freeze the entire UI — keystrokes would queue up and even quitting could stall. This is especially problematic during the exact infrastructure stress scenarios where operators need vtui most. Performance sparkline queries now run in a dedicated background worker instead of blocking the main event loop. Scrolling, filtering, searching, and periodic refreshes all remain responsive regardless of network latency. Sparklines populate within roughly 500ms of navigating to a new view, and stale results from a previous view are automatically discarded. This is the first phase of a broader effort to move all network operations off the UI thread.
 
 - **Saved connection profiles**: you can keep several vSphere connections in one config file instead of juggling environment variables. Pick a profile with `vtui <profile-name>`, set a default for plain `vtui`, or list profiles with `vtui --list`. Passwords can come from a small shell command (for example 1Password CLI, Bitwarden, or envchain) so secrets stay out of the file and off the command line; if you omit a password, vTUI asks for it when you start. Your existing `.env` / variable setup still works unchanged.
-
 - **Windows password integration**: documented and improved support for Windows PowerShell SecretManagement (`Get-Secret`) as a `password_cmd`, including setup steps for `Microsoft.PowerShell.SecretStore` and a working sample config.
 
 ## [0.2.3] - 2026-03-29

@@ -21,6 +21,14 @@ pub(crate) struct BodyKeyResult {
 }
 
 impl BodyPane {
+    /// When `true`, PropertyCollector long-polls should run (resource grid or live managed-object properties).
+    pub fn wants_property_collector_waits(&self) -> bool {
+        crate::polling_policy::property_collector_wanted(
+            matches!(self, BodyPane::ResourceBrowser(_)),
+            matches!(self, BodyPane::PropertyBrowser(_)),
+        )
+    }
+
     pub fn render(&mut self, frame: &mut Frame, body_area: Rect) {
         match self {
             BodyPane::ResourceBrowser(resource_manager) => {
