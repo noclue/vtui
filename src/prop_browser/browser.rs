@@ -11,7 +11,7 @@ use ratatui::layout::Rect;
 use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, ScrollbarOrientation, StatefulWidget};
+use ratatui::widgets::{Block, Padding, ScrollbarOrientation, StatefulWidget};
 use std::borrow::Cow;
 use std::io::Write;
 use std::mem;
@@ -564,7 +564,8 @@ impl StatefulWidget for PropertyBrowser<'_> {
                             Style::default().fg(Color::Cyan),
                         )
                         .alignment(Alignment::Right),
-                    ),
+                    )
+                    .padding(Padding::right(1)),
             )
             .highlight_style(self.highlight_style)
             .highlight_symbol(self.highlight_symbol);
@@ -573,8 +574,9 @@ impl StatefulWidget for PropertyBrowser<'_> {
             widget = widget.experimental_scrollbar(Some(
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
                     .begin_symbol(None)
-                    .track_symbol(None)
-                    .end_symbol(None),
+                    .end_symbol(None)
+                    .track_style(Style::default().bg(Color::DarkGray).fg(Color::DarkGray))
+                    .thumb_style(Style::default().bg(Color::Gray).fg(Color::Gray)),
             ));
         }
 

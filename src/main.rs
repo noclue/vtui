@@ -24,6 +24,8 @@ mod resource_type;
 mod search;
 mod vm_action_ui;
 mod vm_power_actions;
+mod vm_summary;
+mod vm_summary_ui;
 
 #[allow(clippy::await_holding_refcell_ref)]
 #[tokio::main]

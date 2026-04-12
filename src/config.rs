@@ -573,8 +573,7 @@ fn resolve_run(env_name: Option<String>) -> Result<CliAction> {
                         }
                     )
                 })?;
-                let resolved =
-                    merge_and_resolve(Some(env_cfg), Some(file), Some(path.as_path()))?;
+                let resolved = merge_and_resolve(Some(env_cfg), Some(file), Some(path.as_path()))?;
                 return Ok(CliAction::Connect(resolved));
             }
             let resolved = merge_and_resolve(None, loaded.as_ref(), path_opt.as_deref())?;

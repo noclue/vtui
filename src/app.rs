@@ -15,6 +15,7 @@ use crate::resource_type::{ResourceSelectionState, ResourceType};
 use crate::search::SearchState;
 use crate::vm_action_ui::{self, VmActionKeyOutcome, VmActionUi};
 use crate::vm_power_actions::VmPowerAction;
+use crate::vm_summary_ui::{VmSummaryKeyOutcome, VmSummaryUi};
 use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEventKind};
 use log::{debug, info, warn};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -47,6 +48,8 @@ pub struct App {
     history: HistoryManager,
     /// VM power action modals (`x` from VM grid).
     vm_action_ui: VmActionUi,
+    /// VM summary popup (`s` from VM grid).
+    vm_summary_ui: VmSummaryUi,
     /// Outstanding VM power action submitted to [`crate::ops`] (modal already closed).
     vm_action_pending_execute: Option<OperationId>,
     /// Monotonic id generator for ops requests.
@@ -104,6 +107,7 @@ impl App {
             resource_selection_state: ResourceSelectionState::new(),
             history: HistoryManager::new(20), // TODO: Make this configurable
             vm_action_ui: VmActionUi::default(),
+            vm_summary_ui: VmSummaryUi::default(),
             vm_action_pending_execute: None,
             next_operation_id: 1,
             ops,
@@ -250,6 +254,57 @@ impl App {
                 }
                 self.pending_redraw = true;
             }
+            AppEvent::OpenVmSummary(vm_ref) => {
+                let request_id = self.next_op_id();
+                let vm_label = format!("{}:{}", vm_ref.r#type.as_str(), vm_ref.value);
+                info!(
+                    target: "vm_summary",
+                    "vm summary: open (queue fetch) request_id={request_id} vm={vm_label}"
+                );
+                self.vm_summary_ui.start_loading(request_id);
+                let req = OperationRequest::PrefetchVmSummary {
+                    request_id,
+                    vm: vm_ref,
+                };
+                if self.submit_op(req).await.is_err() {
+                    warn!(
+                        target: "vm_summary",
+                        "vm summary: could not queue fetch request_id={request_id} vm={vm_label} (ops worker unavailable)"
+                    );
+                    self.vm_summary_ui.close();
+                    self.error_popup =
+                        Some("Could not queue VM summary fetch (ops worker unavailable).".into());
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::VmSummarySucceeded {
+                request_id,
+                summary,
+            } => {
+                if self.vm_summary_ui.pending_matches(request_id) {
+                    self.vm_summary_ui.apply_success(request_id, summary);
+                } else {
+                    debug!(
+                        target: "vm_summary",
+                        "vm summary: ignoring VmSummarySucceeded (stale request_id={} name={})",
+                        request_id,
+                        summary.vm_name
+                    );
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::VmSummaryFailed { request_id, error } => {
+                if self.vm_summary_ui.pending_matches(request_id) {
+                    self.vm_summary_ui.close();
+                    self.error_popup = Some(error);
+                } else {
+                    debug!(
+                        target: "vm_summary",
+                        "vm summary: ignoring VmSummaryFailed (stale request_id={request_id}): {error}"
+                    );
+                }
+                self.pending_redraw = true;
+            }
             AppEvent::OperationSucceeded { op_id, message } => {
                 if self.vm_action_pending_execute == Some(op_id) {
                     self.vm_action_pending_execute = None;
@@ -353,6 +408,9 @@ impl App {
         if self.vm_action_ui.is_active() {
             self.vm_action_ui.render(frame);
         }
+        if self.vm_summary_ui.is_active() {
+            self.vm_summary_ui.render(frame);
+        }
         if let Some(ref msg) = self.error_popup {
             vm_action_ui::render_error_popup(frame, msg);
         }
@@ -409,6 +467,16 @@ impl App {
                     self.pending_redraw = true;
                 }
                 return Ok(());
+            }
+
+            if self.vm_summary_ui.is_active() {
+                match self.vm_summary_ui.handle_key(key) {
+                    VmSummaryKeyOutcome::Ignored => {}
+                    VmSummaryKeyOutcome::Consumed | VmSummaryKeyOutcome::Close => {
+                        self.pending_redraw = true;
+                        return Ok(());
+                    }
+                }
             }
 
             if self.vm_action_ui.is_active() {

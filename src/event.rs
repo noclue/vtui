@@ -4,6 +4,7 @@ use crate::resource_browser::EventBrowserPayload;
 use crate::resource_browser::HistoryRecord as ResourceHistoryRecord;
 use crate::resource_type::ResourceType;
 use crate::vm_power_actions::VmActionContext;
+use crate::vm_summary::VmSummary;
 use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
 use ratatui::crossterm::event::Event as CrosstermEvent;
@@ -53,6 +54,9 @@ pub enum AppEvent {
     /// Open VM power-actions flow for the given VM (prefetch path + disabled methods in `App`).
     OpenVmActions(ManagedObjectReference),
 
+    /// Open VM summary popup (async fetch via ops).
+    OpenVmSummary(ManagedObjectReference),
+
     ResourceManagerHistory(ResourceHistoryRecord),
     PropertyManagerHistory(PropertyHistoryRecord),
 
@@ -69,6 +73,16 @@ pub enum AppEvent {
     },
     /// VM action prefetch failed (`request_id` matches UI submission).
     VmActionPrefetchFailed {
+        request_id: OperationId,
+        error: String,
+    },
+    /// VM summary fetch succeeded (`request_id` matches UI submission).
+    VmSummarySucceeded {
+        request_id: OperationId,
+        summary: VmSummary,
+    },
+    /// VM summary fetch failed (`request_id` matches UI submission).
+    VmSummaryFailed {
         request_id: OperationId,
         error: String,
     },

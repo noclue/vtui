@@ -1,9 +1,10 @@
 ---
 source: src/resource_browser/resource_table.rs
+assertion_line: 300
 expression: "draw_table(&mut mock, &parent, &mut state, 72, 14)"
 ---
 "┌──────────────────────────Mock VMs (all)[0]───────────────────────────┐"
-"│  ID                     Name                   Note                  │"
+"│  ID                     Name                  Note                   │"
 "│                                                                      │"
 "│                                                                      │"
 "│                                                                      │"

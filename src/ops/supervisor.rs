@@ -1,6 +1,8 @@
 use crate::event::{AppEvent, Event};
 use crate::ops::types::{InventoryOperation, OperationRequest};
 use crate::vm_power_actions::{execute_vm_power_action, prefetch_vm_action_context};
+use crate::vm_summary::fetch_vm_summary;
+use log::{debug, warn};
 use std::sync::Arc;
 use tokio::sync::{Semaphore, mpsc};
 use vim_rs::core::client::VimClientHandle;
@@ -35,6 +37,38 @@ pub async fn run_ops_supervisor(
                             request_id,
                             error: format!("{e:#}"),
                         },
+                    };
+                    let _ = event_tx.send(Event::App(Box::new(ev)));
+                }
+                OperationRequest::PrefetchVmSummary { request_id, vm } => {
+                    let vm_label = format!("{}:{}", vm.r#type.as_str(), vm.value);
+                    debug!(
+                        target: "vm_summary",
+                        "ops: PrefetchVmSummary task start request_id={request_id} vm={vm_label}"
+                    );
+                    let res = fetch_vm_summary(client, vm).await;
+                    let ev = match res {
+                        Ok(summary) => {
+                            debug!(
+                                target: "vm_summary",
+                                "ops: PrefetchVmSummary task ok request_id={request_id} vm={vm_label} name={}",
+                                summary.vm_name
+                            );
+                            AppEvent::VmSummarySucceeded {
+                                request_id,
+                                summary,
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                target: "vm_summary",
+                                "ops: PrefetchVmSummary task failed request_id={request_id} vm={vm_label}: {e:#}"
+                            );
+                            AppEvent::VmSummaryFailed {
+                                request_id,
+                                error: format!("{e:#}"),
+                            }
+                        }
                     };
                     let _ = event_tx.send(Event::App(Box::new(ev)));
                 }

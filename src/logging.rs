@@ -327,7 +327,7 @@ impl LogWriter for TestVecWriter {
         );
         self.lines
             .lock()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            .map_err(|e| std::io::Error::other(e.to_string()))?
             .push(line);
         Ok(())
     }
@@ -515,10 +515,10 @@ mod tests {
         for e in entries.flatten() {
             let p = e.path();
             let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if fname.contains(name_part) {
-                if let Ok(s) = std::fs::read_to_string(&p) {
-                    out.push_str(&s);
-                }
+            if fname.contains(name_part)
+                && let Ok(s) = std::fs::read_to_string(&p)
+            {
+                out.push_str(&s);
             }
         }
         out
@@ -530,10 +530,20 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         set_test_state_root(Some(tmp.path().to_path_buf()));
 
-        let mut detailed = ResolvedLogging::default();
-        detailed.wire_mode = WireLoggingMode::Detailed;
-        detailed.app_rotation.compress = false;
-        detailed.wire_rotation.compress = false;
+        let base = ResolvedLogging::default();
+        let detailed = ResolvedLogging {
+            wire_mode: WireLoggingMode::Detailed,
+            app_rotation: RotatingFileConfig {
+                compress: false,
+                ..base.app_rotation.clone()
+            },
+            wire_rotation: RotatingFileConfig {
+                compress: false,
+                ..base.wire_rotation.clone()
+            },
+            app_level: base.app_level,
+            filters: base.filters,
+        };
 
         DeferredNow::force_utc();
         let h = init(&detailed, false).expect("init");
