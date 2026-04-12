@@ -1,5 +1,4 @@
 use crate::body_pane::BodyPane;
-use crate::polling_policy;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
@@ -7,6 +6,7 @@ use crate::operation_types::OperationId;
 use crate::ops::types::{InventoryOperation, OperationRequest};
 use crate::ops::{OpsHandle, spawn_ops_supervisor};
 use crate::perf_worker::{PerfRequest, run_perf_worker};
+use crate::polling_policy;
 use crate::prop_browser::{
     BrowserMetadata, PropertyBrowserManager, PropertyHistoryRecord, StaticPropertyBrowserManager,
 };
@@ -25,9 +25,13 @@ use ratatui::text::Line;
 use ratatui::{DefaultTerminal, Frame};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 use tokio::sync::watch;
 use vim_rs::core::client::{Transport, VimClientHandle};
 use vim_rs::core::pc_cache::CacheManager;
+use vim_rs::types::structs::ManagedObjectReference;
+
+use crate::resource_browser::perf::PerfSnapshotShare;
 
 /// Main application object.
 pub struct App {
@@ -67,6 +71,8 @@ pub struct App {
     perf_worker: tokio::task::JoinHandle<()>,
     /// Dropped last so the perf worker observes shutdown after other teardown begins.
     perf_tx: watch::Sender<PerfRequest>,
+    /// Last perf demand sent to the worker; used to skip redundant ad-hoc refreshes.
+    last_perf_demand: Option<PerfDemandState>,
 }
 
 const ASCII_ART: &str = r#"     ╭───────╮
@@ -74,6 +80,62 @@ const ASCII_ART: &str = r#"     ╭───────╮
  \ \/ / │ │╔═╗╔═╗╭─╮
   \  /  │ │║ ╚╝ ║│ │
    ╰╯   ╰─╯╚════╝╰─╯"#;
+
+#[derive(Clone)]
+enum PerfDemandState {
+    Paused {
+        generation: u64,
+    },
+    Active {
+        generation: u64,
+        entities: Vec<ManagedObjectReference>,
+        snapshot: PerfSnapshotShare,
+    },
+}
+
+impl PerfDemandState {
+    fn paused(generation: u64) -> Self {
+        Self::Paused { generation }
+    }
+
+    fn active(req: &PerfRequest) -> Self {
+        Self::Active {
+            generation: req.generation,
+            entities: req.entities.clone(),
+            snapshot: req.snapshot.clone(),
+        }
+    }
+
+    fn matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Paused {
+                    generation: left_generation,
+                },
+                Self::Paused {
+                    generation: right_generation,
+                },
+            ) => left_generation == right_generation,
+            (
+                Self::Active {
+                    generation: left_generation,
+                    entities: left_entities,
+                    snapshot: left_snapshot,
+                },
+                Self::Active {
+                    generation: right_generation,
+                    entities: right_entities,
+                    snapshot: right_snapshot,
+                },
+            ) => {
+                left_generation == right_generation
+                    && left_entities == right_entities
+                    && Arc::ptr_eq(left_snapshot, right_snapshot)
+            }
+            _ => false,
+        }
+    }
+}
 
 impl App {
     pub async fn new(
@@ -118,6 +180,7 @@ impl App {
             perf_generation: 1,
             perf_worker,
             perf_tx,
+            last_perf_demand: None,
         };
         app.refresh_polling_demand();
         Ok(app)
@@ -132,16 +195,35 @@ impl App {
             matches!(self.body_pane, BodyPane::ResourceBrowser(_)),
             self.vm_summary_ui.is_active(),
         );
-        if want_perf {
+        let next_perf_demand = if want_perf {
             if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                 let req = resource_mgr.perf_request(self.perf_generation);
-                let _ = self.perf_tx.send_replace(req);
+                let next = PerfDemandState::active(&req);
+                let unchanged = self
+                    .last_perf_demand
+                    .as_ref()
+                    .is_some_and(|prev| prev.matches(&next));
+                if !unchanged {
+                    let _ = self.perf_tx.send_replace(req);
+                }
+                next
+            } else {
+                PerfDemandState::paused(self.perf_generation)
             }
         } else {
-            let _ = self
-                .perf_tx
-                .send_replace(PerfRequest::paused(self.perf_generation));
-        }
+            let next = PerfDemandState::paused(self.perf_generation);
+            let unchanged = self
+                .last_perf_demand
+                .as_ref()
+                .is_some_and(|prev| prev.matches(&next));
+            if !unchanged {
+                let _ = self
+                    .perf_tx
+                    .send_replace(PerfRequest::paused(self.perf_generation));
+            }
+            next
+        };
+        self.last_perf_demand = Some(next_perf_demand);
     }
 
     fn next_op_id(&mut self) -> OperationId {
@@ -618,5 +700,60 @@ impl App {
             self.refresh_polling_demand();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PerfDemandState;
+    use crate::perf_worker::PerfRequest;
+    use crate::resource_browser::perf::new_perf_snapshot_share;
+    use vim_rs::types::enums::MoTypesEnum;
+    use vim_rs::types::structs::ManagedObjectReference;
+
+    fn vm(id: &str) -> ManagedObjectReference {
+        ManagedObjectReference {
+            r#type: MoTypesEnum::VirtualMachine,
+            value: id.into(),
+        }
+    }
+
+    #[test]
+    fn perf_demand_matches_only_when_generation_entities_and_snapshot_match() {
+        let shared_snapshot = new_perf_snapshot_share();
+        let same = PerfDemandState::active(&PerfRequest {
+            generation: 7,
+            entities: vec![vm("vm-1"), vm("vm-2")],
+            snapshot: shared_snapshot.clone(),
+        });
+        let same_again = PerfDemandState::active(&PerfRequest {
+            generation: 7,
+            entities: vec![vm("vm-1"), vm("vm-2")],
+            snapshot: shared_snapshot,
+        });
+        let different_entities = PerfDemandState::active(&PerfRequest {
+            generation: 7,
+            entities: vec![vm("vm-1")],
+            snapshot: new_perf_snapshot_share(),
+        });
+
+        assert!(same.matches(&same_again));
+        assert!(!same.matches(&different_entities));
+    }
+
+    #[test]
+    fn perf_demand_distinguishes_pause_state_and_generation() {
+        let paused = PerfDemandState::paused(3);
+        let same_paused = PerfDemandState::paused(3);
+        let different_generation = PerfDemandState::paused(4);
+        let active = PerfDemandState::active(&PerfRequest {
+            generation: 3,
+            entities: vec![vm("vm-1")],
+            snapshot: new_perf_snapshot_share(),
+        });
+
+        assert!(paused.matches(&same_paused));
+        assert!(!paused.matches(&different_generation));
+        assert!(!paused.matches(&active));
     }
 }

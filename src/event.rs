@@ -7,7 +7,7 @@ use crate::vm_power_actions::VmActionContext;
 use crate::vm_summary::VmSummary;
 use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
-use log::debug;
+use log::{debug, trace};
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use tokio::sync::{mpsc, watch};
 use vim_rs::core::pc_cache::Monitor;
@@ -145,7 +145,7 @@ impl EventHandler {
     /// allowed to finish; the next wait is not started until demand is `true` again.
     pub fn set_property_collector_demand(&self, wanted: bool) {
         let _ = self.pc_demand_tx.send(wanted);
-        debug!(
+        trace!(
             target: "pc_wait",
             "property collector demand set to {}",
             wanted
