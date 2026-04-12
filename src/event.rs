@@ -7,10 +7,14 @@ use crate::vm_power_actions::VmActionContext;
 use crate::vm_summary::VmSummary;
 use anyhow::{Context, Result};
 use futures::{FutureExt, StreamExt};
+use log::debug;
 use ratatui::crossterm::event::Event as CrosstermEvent;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use vim_rs::core::pc_cache::Monitor;
 use vim_rs::types::structs::{ManagedObjectReference, PropertyFilterUpdate};
+
+/// Long-poll timeout for PropertyCollector (`WaitForUpdatesEx`), in **seconds** (see `vim_rs::Monitor::wait_updates`).
+const PROPERTY_COLLECTOR_WAIT_TIMEOUT_S: i32 = 60;
 
 /// Representation of all possible events.
 #[derive(Debug)]
@@ -107,27 +111,45 @@ pub struct EventHandler {
     receiver: mpsc::UnboundedReceiver<Event>,
 
     event_dispatch: Option<tokio::task::JoinHandle<Result<()>>>,
+    /// When `true`, the PropertyCollector task arms `Monitor::wait_updates` sequentially (never concurrently with crossterm).
+    pc_demand_tx: watch::Sender<bool>,
 }
 
 impl EventHandler {
-    /// Constructs a new instance of [`EventHandler`] and spawns a new thread to handle events.
+    /// Constructs a new instance of [`EventHandler`] and spawns tasks for terminal input and
+    /// PropertyCollector waits (demand-driven; no `select!` with crossterm).
     pub fn new(monitor: Monitor) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
         let internal_sender = sender.clone();
+        let (pc_demand_tx, pc_demand_rx) = watch::channel(false);
         let event_dispatch = tokio::spawn(async move {
-            let mut actor = EventTask::new(internal_sender, monitor);
-            actor.run().await
+            let terminal = run_terminal_loop(internal_sender.clone());
+            let pc = run_property_collector_loop(internal_sender, monitor, pc_demand_rx);
+            tokio::try_join!(terminal, pc)?;
+            Ok(())
         });
         Self {
             sender,
             receiver,
             event_dispatch: Some(event_dispatch),
+            pc_demand_tx,
         }
     }
 
     /// Clone the channel used to enqueue [`Event`]s (e.g. for background workers).
     pub fn clone_event_sender(&self) -> mpsc::UnboundedSender<Event> {
         self.sender.clone()
+    }
+
+    /// Set whether PropertyCollector long-polls should run. When `false`, the current wait is
+    /// allowed to finish; the next wait is not started until demand is `true` again.
+    pub fn set_property_collector_demand(&self, wanted: bool) {
+        let _ = self.pc_demand_tx.send(wanted);
+        debug!(
+            target: "pc_wait",
+            "property collector demand set to {}",
+            wanted
+        );
     }
 
     /// Receives an event from the sender.
@@ -167,61 +189,80 @@ impl EventHandler {
     }
 }
 
-/// A thread that handles reading crossterm events and emitting tick events on a regular schedule.
-struct EventTask {
-    /// Event sender channel.
-    sender: mpsc::UnboundedSender<Event>,
-    /// vCenter event monitor
-    monitor: Monitor,
+/// Crossterm only — does not share a `select!` with PropertyCollector waits.
+async fn run_terminal_loop(sender: mpsc::UnboundedSender<Event>) -> Result<()> {
+    let mut reader = crossterm::event::EventStream::new();
+    loop {
+        tokio::select! {
+            _ = sender.closed() => {
+                break;
+            }
+            Some(Ok(evt)) = reader.next().fuse() => {
+                let _ = sender.send(Event::Crossterm(evt));
+            }
+        }
+    }
+    Ok(())
 }
 
-impl EventTask {
-    /// Constructs a new instance of [`EventThread`].
-    fn new(sender: mpsc::UnboundedSender<Event>, monitor: Monitor) -> Self {
-        Self { sender, monitor }
-    }
-
-    /// Runs the event thread.
-    ///
-    /// This function emits tick events at a fixed rate and polls for crossterm events in between.
-    async fn run(&mut self) -> Result<()> {
-        let mut reader = crossterm::event::EventStream::new();
+/// Sequential PropertyCollector waits only; respects [`PROPERTY_COLLECTOR_WAIT_TIMEOUT_S`].
+async fn run_property_collector_loop(
+    sender: mpsc::UnboundedSender<Event>,
+    mut monitor: Monitor,
+    mut pc_demand_rx: watch::Receiver<bool>,
+) -> Result<()> {
+    loop {
+        // Wait until demand is true or sender shut down
         loop {
-            let crossterm_event = reader.next().fuse();
-            let updates = self.monitor.wait_updates(100).fuse();
             tokio::select! {
-                _ = self.sender.closed() => {
-                    break;
+                _ = sender.closed() => {
+                    return Ok(());
                 }
-                Some(Ok(evt)) = crossterm_event => {
-                    self.send(Event::Crossterm(evt));
+                r = pc_demand_rx.changed() => {
+                    if r.is_err() {
+                        return Ok(());
+                    }
+                    if *pc_demand_rx.borrow() {
+                        debug!(target: "pc_wait", "property collector wait loop: demand on, arming wait");
+                        break;
+                    }
                 }
-                updates_result = updates => {
+            }
+        }
+
+        // Demand is true: one wait at a time; re-check demand after each completion
+        loop {
+            if !*pc_demand_rx.borrow() {
+                debug!(
+                    target: "pc_wait",
+                    "property collector wait loop: demand off, pausing after current cycle"
+                );
+                break;
+            }
+
+            tokio::select! {
+                _ = sender.closed() => {
+                    return Ok(());
+                }
+                updates_result = monitor.wait_updates(PROPERTY_COLLECTOR_WAIT_TIMEOUT_S) => {
+                    debug!(target: "pc_wait", "property collector wait completed");
                     match updates_result {
-                        Ok(None) => {
-                            continue;
-                        }
+                        Ok(None) => continue,
                         Err(e) => {
-                            self.send(Event::App(Box::new(AppEvent::ErrorMessage(
+                            let _ = sender.send(Event::App(Box::new(AppEvent::ErrorMessage(
                                 format!("Error waiting for updates: {}", e),
                             ))));
+                            continue;
                         }
                         Ok(Some(updates)) => {
-                            self.send(Event::App(Box::new(AppEvent::PropertyCollector(
+                            let _ = sender.send(Event::App(Box::new(AppEvent::PropertyCollector(
                                 updates,
                             ))));
+                            continue;
                         }
                     }
                 }
             }
         }
-        Ok(())
-    }
-
-    /// Sends an event to the receiver.
-    fn send(&self, event: Event) {
-        // Ignores the result because shutting down the app drops the receiver, which causes the send
-        // operation to fail. This is expected behavior and should not panic.
-        let _ = self.sender.send(event);
     }
 }

@@ -18,6 +18,7 @@ mod logging;
 mod operation_types;
 mod ops;
 mod perf_worker;
+mod polling_policy;
 mod prop_browser;
 mod resource_browser;
 mod resource_type;

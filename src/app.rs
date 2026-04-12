@@ -1,4 +1,5 @@
 use crate::body_pane::BodyPane;
+use crate::polling_policy;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
@@ -118,8 +119,29 @@ impl App {
             perf_worker,
             perf_tx,
         };
-        app.signal_perf_worker();
+        app.refresh_polling_demand();
         Ok(app)
+    }
+
+    /// Recompute PropertyCollector demand and perf worker request from the current UI (body pane + modals).
+    fn refresh_polling_demand(&mut self) {
+        let pc = self.body_pane.wants_property_collector_waits();
+        self.events.set_property_collector_demand(pc);
+
+        let want_perf = polling_policy::perf_polling_wanted(
+            matches!(self.body_pane, BodyPane::ResourceBrowser(_)),
+            self.vm_summary_ui.is_active(),
+        );
+        if want_perf {
+            if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
+                let req = resource_mgr.perf_request(self.perf_generation);
+                let _ = self.perf_tx.send_replace(req);
+            }
+        } else {
+            let _ = self
+                .perf_tx
+                .send_replace(PerfRequest::paused(self.perf_generation));
+        }
     }
 
     fn next_op_id(&mut self) -> OperationId {
@@ -130,16 +152,6 @@ impl App {
 
     async fn submit_op(&mut self, req: OperationRequest) -> Result<(), crate::ops::OpsSubmitError> {
         self.ops.submit(req).await
-    }
-
-    fn signal_perf_worker(&mut self) {
-        if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
-            let req = resource_mgr.perf_request(self.perf_generation);
-            // `watch::Sender::send` returns Err while `receiver_count() == 0`, which can happen
-            // briefly before the spawned perf task is first polled. `send_replace` always stores
-            // the latest request so the worker sees it on the next `borrow_and_update`.
-            let _ = self.perf_tx.send_replace(req);
-        }
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> anyhow::Result<()> {
@@ -165,7 +177,7 @@ impl App {
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.invalidate();
                 }
-                self.signal_perf_worker();
+                self.refresh_polling_demand();
                 self.pending_redraw = true;
             }
             AppEvent::ErrorMessage(msg) => {
@@ -173,6 +185,10 @@ impl App {
             }
             AppEvent::Quit => {
                 info!("Quitting...");
+                self.events.set_property_collector_demand(false);
+                let _ = self
+                    .perf_tx
+                    .send_replace(PerfRequest::paused(self.perf_generation));
                 self.ops.shutdown();
                 self.ops_worker.abort();
                 self.perf_worker.abort();
@@ -185,7 +201,7 @@ impl App {
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.set_filter(Some(filter));
                 }
-                self.signal_perf_worker();
+                self.refresh_polling_demand();
                 self.pending_redraw = true;
             }
             AppEvent::OpenResourceSelection => self.resource_selection_state.activate(),
@@ -221,7 +237,7 @@ impl App {
                         self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
                     }
                 }
-                self.signal_perf_worker();
+                self.refresh_polling_demand();
             }
             AppEvent::OpenVmActions(vm_ref) => {
                 let request_id = self.next_op_id();
@@ -275,6 +291,7 @@ impl App {
                     self.error_popup =
                         Some("Could not queue VM summary fetch (ops worker unavailable).".into());
                 }
+                self.refresh_polling_demand();
                 self.pending_redraw = true;
             }
             AppEvent::VmSummarySucceeded {
@@ -297,6 +314,7 @@ impl App {
                 if self.vm_summary_ui.pending_matches(request_id) {
                     self.vm_summary_ui.close();
                     self.error_popup = Some(error);
+                    self.refresh_polling_demand();
                 } else {
                     debug!(
                         target: "vm_summary",
@@ -323,7 +341,8 @@ impl App {
                 info!("LoadProperties. moref: {:?}", moref);
                 self.body_pane = BodyPane::PropertyBrowser(
                     PropertyBrowserManager::new(self.cache_mgr.clone(), moref).await?,
-                )
+                );
+                self.refresh_polling_demand();
             }
             AppEvent::LoadEventProperties(payload) => {
                 let payload = *payload;
@@ -336,6 +355,7 @@ impl App {
                 self.body_pane = BodyPane::StaticPropertyBrowser(
                     StaticPropertyBrowserManager::new(metadata, root)?,
                 );
+                self.refresh_polling_demand();
             }
             AppEvent::ResourceManagerHistory(history) => {
                 self.history.add_resource_entry(history);
@@ -472,8 +492,13 @@ impl App {
             if self.vm_summary_ui.is_active() {
                 match self.vm_summary_ui.handle_key(key) {
                     VmSummaryKeyOutcome::Ignored => {}
-                    VmSummaryKeyOutcome::Consumed | VmSummaryKeyOutcome::Close => {
+                    VmSummaryKeyOutcome::Consumed => {
                         self.pending_redraw = true;
+                        return Ok(());
+                    }
+                    VmSummaryKeyOutcome::Close => {
+                        self.pending_redraw = true;
+                        self.refresh_polling_demand();
                         return Ok(());
                     }
                 }
@@ -523,7 +548,7 @@ impl App {
                 self.perf_generation = self.perf_generation.saturating_add(1);
             }
             if key_outcome.handled {
-                self.signal_perf_worker();
+                self.refresh_polling_demand();
                 return Ok(());
             }
 
@@ -544,7 +569,6 @@ impl App {
                     BodyPane::ResourceBrowser(ref mut resource_mgr) => {
                         resource_mgr.load_history_record(record).await?;
                         self.perf_generation = self.perf_generation.saturating_add(1);
-                        self.signal_perf_worker();
                     }
                     BodyPane::PropertyBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
                         self.perf_generation = self.perf_generation.saturating_add(1);
@@ -556,7 +580,6 @@ impl App {
                             )
                             .await?,
                         ));
-                        self.signal_perf_worker();
                     }
                 },
                 History::Property(record) => match record {
@@ -592,6 +615,7 @@ impl App {
                     },
                 },
             }
+            self.refresh_polling_demand();
         }
         Ok(())
     }

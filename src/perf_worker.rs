@@ -27,6 +27,15 @@ impl PerfRequest {
             snapshot: new_perf_snapshot_share(),
         }
     }
+
+    /// Empty entity set pauses `QueryPerf`; `generation` discards stale worker results vs current UI.
+    pub fn paused(generation: u64) -> Self {
+        Self {
+            generation,
+            entities: vec![],
+            snapshot: new_perf_snapshot_share(),
+        }
+    }
 }
 
 pub async fn run_perf_worker(
@@ -81,5 +90,17 @@ pub async fn run_perf_worker(
                 log::warn!("perf worker: {e:#}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PerfRequest;
+
+    #[test]
+    fn paused_request_clears_entities_and_preserves_generation() {
+        let p = PerfRequest::paused(7);
+        assert_eq!(p.generation, 7);
+        assert!(p.entities.is_empty());
     }
 }
