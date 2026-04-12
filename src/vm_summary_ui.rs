@@ -22,6 +22,11 @@ const HEADER_RIGHT_COL: usize = 39;
 /// Spaces inserted between table columns so clipped text does not touch the next column.
 const TABLE_COL_GAP: usize = 1;
 
+const LABEL_COLOR: Color = Color::Gray;
+const VALUE_COLOR: Color = Color::Yellow;
+const BORDER_COLOR: Color = Color::Yellow;
+const BACKGROUND_COLOR: Color = Color::Rgb(32, 32, 32);
+
 #[derive(Debug, Default)]
 pub struct VmSummaryUi {
     layer: VmSummaryLayer,
@@ -181,14 +186,14 @@ impl VmSummaryUi {
                 let area = summary_popup_rect(frame.area());
                 let block = Block::default()
                     .title(" VM summary ")
-                    .style(Style::default().bg(Color::DarkGray))
+                    .style(Style::default().bg(BACKGROUND_COLOR))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Yellow))
+                    .border_style(Style::default().fg(BORDER_COLOR))
                     .title_bottom(Line::from("Esc / q close"));
                 let p = Paragraph::new("\n  Loading VM summary…")
                     .alignment(Alignment::Center)
-                    .style(Style::default().bg(Color::DarkGray))
+                    .style(Style::default().bg(BACKGROUND_COLOR))
                     .block(block);
                 frame.render_widget(Clear, area);
                 frame.render_widget(p, area);
@@ -208,10 +213,10 @@ impl VmSummaryUi {
                     "Esc/q close  ↑/↓ scroll  PgUp/PgDn page  g/G top/bottom  Ctrl-b/f page";
                 let block = Block::default()
                     .title(title)
-                    .style(Style::default().bg(Color::DarkGray))
+                    .style(Style::default().bg(BACKGROUND_COLOR))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Yellow))
+                    .border_style(Style::default().fg(BORDER_COLOR))
                     .title_bottom(Line::from(footer))
                     // Reserve the right column for the scrollbar so row styles do not paint under it.
                     .padding(Padding::right(1));
@@ -234,7 +239,7 @@ impl VmSummaryUi {
 
                 let paragraph = Paragraph::new(text.clone())
                     .scroll((*scroll, 0))
-                    .style(Style::default().bg(Color::DarkGray))
+                    .style(Style::default().bg(BACKGROUND_COLOR))
                     .block(block);
 
                 frame.render_widget(paragraph, area);
@@ -254,10 +259,10 @@ impl VmSummaryUi {
                     // Lighter track than the dialog `DarkGray` fill so the gutter reads as its own strip.
                     .track_style(
                         Style::default()
-                            .bg(Color::Rgb(127, 127, 127))
-                            .fg(Color::Rgb(127, 127, 127)),
+                            .bg(Color::DarkGray)
+                            .fg(Color::DarkGray),
                     )
-                    .thumb_style(Style::default().bg(Color::White).fg(Color::White));
+                    .thumb_style(Style::default().bg(Color::Gray).fg(Color::Gray));
                 let sb_area = Rect {
                     x: inner.x + inner.width,
                     y: inner.y,
@@ -325,24 +330,24 @@ fn header_column_widths(total: usize) -> (usize, usize) {
 }
 
 fn lbl(s: &'static str) -> Span<'static> {
-    Span::styled(s, Style::default().fg(Color::White))
+    Span::styled(s, Style::default().fg(LABEL_COLOR))
 }
 
 fn val_span(s: String) -> Span<'static> {
-    Span::styled(s, Style::default().fg(Color::Yellow))
+    Span::styled(s, Style::default().fg(VALUE_COLOR))
 }
 
 fn table_hdr(s: impl Into<String>) -> Span<'static> {
     Span::styled(
         s.into(),
         Style::default()
-            .fg(Color::White)
+            .fg(LABEL_COLOR)
             .add_modifier(Modifier::BOLD),
     )
 }
 
 fn table_val(s: String) -> Span<'static> {
-    Span::styled(s, Style::default().fg(Color::Yellow))
+    Span::styled(s, Style::default().fg(VALUE_COLOR))
 }
 
 fn spans_display_len(spans: &[Span]) -> usize {
@@ -519,7 +524,7 @@ fn build_summary_lines(s: &VmSummary, total_width: usize) -> Vec<Line<'static>> 
     lines.push(Line::from(Span::styled(
         "Networking",
         Style::default()
-            .fg(Color::White)
+            .fg(LABEL_COLOR)
             .add_modifier(Modifier::BOLD),
     )));
     for l in format_network_table(&s.networking, total_width) {
@@ -529,7 +534,7 @@ fn build_summary_lines(s: &VmSummary, total_width: usize) -> Vec<Line<'static>> 
     lines.push(Line::from(Span::styled(
         "Disks",
         Style::default()
-            .fg(Color::White)
+            .fg(LABEL_COLOR)
             .add_modifier(Modifier::BOLD),
     )));
     for l in format_disk_table(&s.disks, total_width) {
