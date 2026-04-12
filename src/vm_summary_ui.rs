@@ -257,11 +257,7 @@ impl VmSummaryUi {
                     .begin_symbol(None)
                     .end_symbol(None)
                     // Lighter track than the dialog `DarkGray` fill so the gutter reads as its own strip.
-                    .track_style(
-                        Style::default()
-                            .bg(Color::DarkGray)
-                            .fg(Color::DarkGray),
-                    )
+                    .track_style(Style::default().bg(Color::DarkGray).fg(Color::DarkGray))
                     .thumb_style(Style::default().bg(Color::Gray).fg(Color::Gray));
                 let sb_area = Rect {
                     x: inner.x + inner.width,
