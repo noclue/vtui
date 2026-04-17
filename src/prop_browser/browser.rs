@@ -216,6 +216,14 @@ impl PropertyBrowserState {
 
     fn apply_update(&mut self, changes: Vec<PropertyChange>) -> anyhow::Result<()> {
         let was_empty = self.items.is_empty();
+        let change_count = changes.len();
+        let change_names: Vec<String> = changes.iter().map(|change| change.name.clone()).collect();
+        debug!(
+            "PropertyBrowserState::apply_update obj={:?} change_count={} changes={:?}",
+            self.obj.as_ref().map(|obj| obj.value.as_str()),
+            change_count,
+            change_names
+        );
         for change in changes {
             let name = change.name;
             match change.op {
@@ -381,9 +389,19 @@ impl Cache for PropertyBrowserState {
                 match update.kind {
                     ObjectUpdateKindEnum::Enter | ObjectUpdateKindEnum::Modify => {
                         let Some(changes) = update.change_set else {
+                            debug!(
+                                "PropertyBrowserState::process_update obj={} kind={:?} with empty change_set",
+                                update.obj.value,
+                                update.kind
+                            );
                             continue;
                         };
-                        debug!("object {:?} update", update.obj);
+                        debug!(
+                            "PropertyBrowserState::process_update obj={} kind={:?} change_count={}",
+                            update.obj.value,
+                            update.kind,
+                            changes.len()
+                        );
                         self.apply_update(changes)
                             .map_err(|e| Error::internal(e.to_string()))?;
                         continue;

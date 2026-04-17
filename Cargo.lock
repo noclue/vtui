@@ -2828,8 +2828,6 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vim_macros"
 version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cd15260043401df8f51562625c28928babcc697d67e73350df838ce4100f7c7"
 dependencies = [
  "phf 0.11.3",
  "proc-macro2",
@@ -2841,8 +2839,6 @@ dependencies = [
 [[package]]
 name = "vim_rs"
 version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "935ffe19137895b725aaa059c1745b999b3bad749412eaf1513b146234ac0b7e"
 dependencies = [
  "base64",
  "bytes",

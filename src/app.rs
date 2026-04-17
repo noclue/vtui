@@ -254,7 +254,13 @@ impl App {
     async fn handle_app_event(&mut self, event: AppEvent) -> anyhow::Result<()> {
         match event {
             AppEvent::PropertyCollector(update) => {
-                debug!("PropertyCollector update. length: {:?}", update.len());
+                let filter_ids: Vec<String> =
+                    update.iter().map(|filter_update| filter_update.filter.value.clone()).collect();
+                debug!(
+                    "PropertyCollector update. length={} filter_ids={:?}",
+                    update.len(),
+                    filter_ids
+                );
                 self.cache_mgr.borrow_mut().apply_updates(update)?;
                 if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
                     resource_mgr.invalidate();

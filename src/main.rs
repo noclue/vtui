@@ -67,6 +67,7 @@ async fn main() -> Result<()> {
         }
     };
     let cache_manager = Rc::new(RefCell::new(CacheManager::new(client.clone())?));
+    cache_manager.borrow_mut().set_cancel_wait_on_filter_change(true);
     let monitor = cache_manager.borrow().create_monitor()?;
     let event_handler = EventHandler::new(monitor);
     let terminal = ratatui::init();

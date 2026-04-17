@@ -163,6 +163,11 @@ impl PropertyBrowserManager {
         cache_mgr: Rc<RefCell<CacheManager>>,
         obj: ManagedObjectReference,
     ) -> anyhow::Result<Self> {
+        debug!(
+            "PropertyBrowserManager::new creating live browser for {}:{}",
+            obj.r#type.as_str(),
+            obj.value
+        );
         let browser_state = Arc::new(RwLock::new(
             PropertyBrowserState::new(obj.clone(), None).await?,
         ));
@@ -178,6 +183,12 @@ impl PropertyBrowserManager {
                 }],
             )
             .await?;
+        debug!(
+            "PropertyBrowserManager::new registered filter={} for {}:{}",
+            filter.value,
+            obj.r#type.as_str(),
+            obj.value
+        );
 
         Ok(Self {
             cache_mgr,
@@ -195,6 +206,11 @@ impl PropertyBrowserManager {
         let PropertyHistoryRecord::Managed { obj, state } = record else {
             anyhow::bail!("expected managed property history record");
         };
+        debug!(
+            "PropertyBrowserManager::from_history_record restoring {}:{}",
+            obj.r#type.as_str(),
+            obj.value
+        );
         let browser_state = Arc::new(RwLock::new(
             PropertyBrowserState::new(obj.clone(), Some(state)).await?,
         ));
@@ -210,6 +226,12 @@ impl PropertyBrowserManager {
                 }],
             )
             .await?;
+        debug!(
+            "PropertyBrowserManager::from_history_record registered filter={} for {}:{}",
+            filter.value,
+            obj.r#type.as_str(),
+            obj.value
+        );
 
         let mgr = Self {
             cache_mgr,
@@ -347,6 +369,12 @@ impl PropertyBrowserManager {
                 }],
             )
             .await?;
+        debug!(
+            "PropertyBrowserManager::load_int registered replacement filter={} for {}:{}",
+            new_filter.value,
+            self.obj.r#type.as_str(),
+            self.obj.value
+        );
         self.filter = new_filter;
 
         Ok(tree_state)
