@@ -23,13 +23,13 @@ winget install noclue.vtui
 macOS and Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.5/vtui-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.6/vtui-installer.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.5/vtui-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.6/vtui-installer.ps1 | iex"
 ```
 
 ## Supported Platforms
@@ -55,6 +55,36 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releas
 - Navigate backward through browsing history with `Backspace`
 - Switch resource types with `r`
 - File logging under the platform state directory (see **Logging** below): separate **application** and **wire** logs with rotation and retention
+
+## Local testing with govcsim (vcsim)
+
+[govmomi](https://github.com/vmware/govmomi) ships **`vcsim`**, a vSphere API simulator that listens on **HTTPS** (default **127.0.0.1:8989**). It is useful for development and CI. The API is not identical to production vCenter or ESXi—some properties are omitted or surfaced differently—so vTUI includes compatibility handling for common simulator quirks; expect occasional empty cells, sparse property trees on facade objects, or differences versus a real lab.
+
+**1. Start the simulator** (credentials are whatever you pass to `vcsim`; this example uses `root` / `root`):
+
+```bash
+vcsim -username root -password root
+```
+
+**2. Point govc at the same endpoint** (optional, for `govc` CLI alongside vTUI):
+
+```bash
+export GOVC_URL='https://root:root@127.0.0.1:8989/sdk'
+# If vcsim printed a PID (or you track it yourself):
+export GOVC_SIM_PID=41911
+```
+
+**3. Configure vTUI** with TLS verification off—the listener uses a generated certificate. Host/port should match the simulator (hostname or IP is fine; `localhost:8989` matches the default bind):
+
+```toml
+[environments.vcsim]
+server = "localhost:8989"
+username = "root"
+password = "root"
+insecure = true
+```
+
+Run **`vtui vcsim`** (or set `default_env = "vcsim"` and run plain **`vtui`**). The same values work as environment variables: `VIM_SERVER`, `VIM_USERNAME`, `VIM_PASSWORD`, and `VIM_INSECURE=true`.
 
 ## Configuration
 

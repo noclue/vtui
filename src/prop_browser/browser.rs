@@ -4,14 +4,14 @@ use std::fs::File;
 
 use chrono::{Local, SecondsFormat};
 use indexmap::IndexMap;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use miniserde::json::{Object, Value};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Padding, ScrollbarOrientation, StatefulWidget};
+use ratatui::widgets::{Block, Padding, Paragraph, ScrollbarOrientation, StatefulWidget, Widget};
 use std::borrow::Cow;
 use std::io::Write;
 use std::mem;
@@ -48,6 +48,12 @@ pub struct PropertyBrowserState {
     items: Vec<TreeItem<'static, String>>,
     /// Tree state for managing the current selection and scroll position.
     state: TreeState<String>,
+    /// Set when the server delivered an `Enter` (or the first `Modify`) with no
+    /// property values at all. Distinguishes "still waiting for the first
+    /// update" from "server returned nothing" so `render()` can show an
+    /// explicit placeholder instead of an empty, black body area. Reset on
+    /// every successful apply_update and on `set_obj` / `load_json_root`.
+    loaded_but_empty: bool,
 }
 
 impl PropertyBrowserState {
@@ -62,6 +68,7 @@ impl PropertyBrowserState {
             properties: IndexMap::new(),
             items: Vec::new(),
             state: tree_state.unwrap_or_default(),
+            loaded_but_empty: false,
         })
     }
 
@@ -80,6 +87,7 @@ impl PropertyBrowserState {
             properties: IndexMap::new(),
             items: Vec::new(),
             state: TreeState::default(),
+            loaded_but_empty: false,
         };
         let _ = s.load_json_root(metadata, None, root, tree_state);
         Ok(s)
@@ -101,6 +109,7 @@ impl PropertyBrowserState {
             .iter()
             .map(|(k, v)| property_to_tree_item(k.clone(), v))
             .collect();
+        self.loaded_but_empty = false;
         let prev = self.replace_tree_state(new_tree_state);
         if self.state.selected().is_empty() && !self.items.is_empty() {
             self.state = self.clean_state();
@@ -117,6 +126,7 @@ impl PropertyBrowserState {
         self.metadata = BrowserMetadata::for_managed_object(&obj);
         self.items = Vec::new();
         self.properties = IndexMap::new();
+        self.loaded_but_empty = false;
         Ok(self.replace_tree_state(new_tree_state))
     }
 
@@ -216,6 +226,14 @@ impl PropertyBrowserState {
 
     fn apply_update(&mut self, changes: Vec<PropertyChange>) -> anyhow::Result<()> {
         let was_empty = self.items.is_empty();
+        let change_count = changes.len();
+        let change_names: Vec<String> = changes.iter().map(|change| change.name.clone()).collect();
+        debug!(
+            "PropertyBrowserState::apply_update obj={:?} change_count={} changes={:?}",
+            self.obj.as_ref().map(|obj| obj.value.as_str()),
+            change_count,
+            change_names
+        );
         for change in changes {
             let name = change.name;
             match change.op {
@@ -248,6 +266,9 @@ impl PropertyBrowserState {
 
         if was_empty && !self.items.is_empty() && self.state.selected().is_empty() {
             self.state = self.clean_state();
+        }
+        if !self.items.is_empty() {
+            self.loaded_but_empty = false;
         }
         Ok(())
     }
@@ -380,10 +401,41 @@ impl Cache for PropertyBrowserState {
             if update.obj.value == self_value {
                 match update.kind {
                     ObjectUpdateKindEnum::Enter | ObjectUpdateKindEnum::Modify => {
-                        let Some(changes) = update.change_set else {
+                        let changes = update.change_set.unwrap_or_default();
+                        if changes.is_empty() {
+                            // Anomalous on real vCenter/ESX: an `enter` with
+                            // `all=true` always delivers every property. Seen
+                            // in practice with vcsim on facade objects such
+                            // as `EnvironmentBrowser` that have no persisted
+                            // property values. We upgrade the log level so
+                            // operators can see *why* the browser body is
+                            // empty, and flip `loaded_but_empty` so `render`
+                            // shows an explicit placeholder instead of a
+                            // black body area.
+                            let obj_type = update.obj.r#type.as_str();
+                            if self.properties.is_empty() {
+                                warn!(
+                                    "PropertyBrowserState::process_update obj={}:{} kind={:?}: server returned no property values (filter all=true); rendering empty-object placeholder",
+                                    obj_type, update.obj.value, update.kind
+                                );
+                                self.loaded_but_empty = true;
+                            } else {
+                                info!(
+                                    "PropertyBrowserState::process_update obj={}:{} kind={:?} with empty change_set; {} cached properties preserved",
+                                    obj_type,
+                                    update.obj.value,
+                                    update.kind,
+                                    self.properties.len()
+                                );
+                            }
                             continue;
-                        };
-                        debug!("object {:?} update", update.obj);
+                        }
+                        debug!(
+                            "PropertyBrowserState::process_update obj={} kind={:?} change_count={}",
+                            update.obj.value,
+                            update.kind,
+                            changes.len()
+                        );
                         self.apply_update(changes)
                             .map_err(|e| Error::internal(e.to_string()))?;
                         continue;
@@ -394,6 +446,7 @@ impl Cache for PropertyBrowserState {
                         self.state = TreeState::default();
                         self.items = Vec::new();
                         self.properties = IndexMap::new();
+                        self.loaded_but_empty = false;
                         continue;
                     }
                     _ => {
@@ -540,33 +593,49 @@ impl StatefulWidget for PropertyBrowser<'_> {
             )])
         };
 
+        let block = Block::bordered()
+            .title(title)
+            .title_alignment(Alignment::Center)
+            .title_bottom(
+                Line::from(vec![
+                    Span::raw(" "),
+                    Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        env!("CARGO_PKG_VERSION"),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::raw(" "),
+                ])
+                .alignment(Alignment::Left),
+            )
+            .title_bottom(
+                Line::styled(
+                    "→ - expand, ← - collapse, ↑↓ - scroll",
+                    Style::default().fg(Color::Cyan),
+                )
+                .alignment(Alignment::Right),
+            )
+            .padding(Padding::right(1));
+
+        // When the tree has no items there is nothing for the `Tree` widget
+        // to draw and the body area would otherwise render as an empty
+        // black rectangle. Show an explicit placeholder so operators can
+        // distinguish "waiting for first PropertyCollector update" from
+        // "server returned zero property values" (vcsim quirk on facade
+        // objects like `EnvironmentBrowser`; also possible with severe
+        // permission stripping on real vCenter).
+        if state.items.is_empty() {
+            let placeholder = empty_state_lines(state);
+            Paragraph::new(placeholder)
+                .alignment(Alignment::Center)
+                .block(block)
+                .render(area, buf);
+            return;
+        }
+
         let mut widget = Tree::new(&state.items)
             .expect("all item identifiers are unique")
-            .block(
-                Block::bordered()
-                    .title(title)
-                    .title_alignment(Alignment::Center)
-                    .title_bottom(
-                        Line::from(vec![
-                            Span::raw(" "),
-                            Span::styled("vTUI version: ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(
-                                env!("CARGO_PKG_VERSION"),
-                                Style::default().fg(Color::DarkGray),
-                            ),
-                            Span::raw(" "),
-                        ])
-                        .alignment(Alignment::Left),
-                    )
-                    .title_bottom(
-                        Line::styled(
-                            "→ - expand, ← - collapse, ↑↓ - scroll",
-                            Style::default().fg(Color::Cyan),
-                        )
-                        .alignment(Alignment::Right),
-                    )
-                    .padding(Padding::right(1)),
-            )
+            .block(block)
             .highlight_style(self.highlight_style)
             .highlight_symbol(self.highlight_symbol);
 
@@ -580,8 +649,47 @@ impl StatefulWidget for PropertyBrowser<'_> {
             ));
         }
 
-        widget.render(area, buf, &mut state.state);
+        StatefulWidget::render(widget, area, buf, &mut state.state);
     }
+}
+
+/// Build the placeholder shown inside the bordered block when the property
+/// tree has no items. Two cases:
+/// * `loaded_but_empty` — the server delivered an `enter` with zero property
+///   values; tell the operator this is a server-side "no data" (not a hang).
+/// * otherwise — we are still waiting for the first PropertyCollector update.
+fn empty_state_lines(state: &PropertyBrowserState) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = vec![Line::from("")];
+    if state.loaded_but_empty {
+        lines.push(Line::styled(
+            "Server returned no property values for this object.",
+            Style::default().fg(Color::Yellow),
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::styled(
+            "The PropertyCollector filter matched the object but the",
+            Style::default().fg(Color::DarkGray),
+        ));
+        lines.push(Line::styled(
+            "server delivered zero properties (see logs at WARN level).",
+            Style::default().fg(Color::DarkGray),
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::styled(
+            "Common with vcsim for facade objects (e.g. EnvironmentBrowser)",
+            Style::default().fg(Color::DarkGray),
+        ));
+        lines.push(Line::styled(
+            "and with permission-stripped objects on real vCenter.",
+            Style::default().fg(Color::DarkGray),
+        ));
+    } else {
+        lines.push(Line::styled(
+            "Loading properties…",
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    lines
 }
 
 /// Phase 5 (`testing_strategy.md`): `PropertyBrowserState` behavior with **hand-authored static JSON**
@@ -784,6 +892,80 @@ mod property_browser_state_unit_tests {
     }
 
     #[tokio::test]
+    async fn process_update_enter_with_missing_change_set_flags_loaded_but_empty() {
+        // Reproduces the vcsim behavior on `EnvironmentBrowser`: the server
+        // emits `Enter` with no `<changeSet>` element (decoded as
+        // `change_set = None`). The browser must flip `loaded_but_empty` so
+        // the UI can show an explicit placeholder instead of a black body.
+        let mut state = PropertyBrowserState::new(vm_moref(), None)
+            .await
+            .expect("new");
+        let empty_enter = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Enter,
+            obj: vm_moref(),
+            change_set: None,
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![empty_enter]).expect("process_update");
+        assert!(state.properties.is_empty());
+        assert!(state.items.is_empty());
+        assert!(state.loaded_but_empty, "empty-enter must flip the flag");
+    }
+
+    #[tokio::test]
+    async fn process_update_enter_with_empty_change_set_vec_flags_loaded_but_empty() {
+        // Same intent as above but with `change_set = Some(vec![])` — some
+        // servers encode the "no property values" case as an empty
+        // sequence rather than a missing element.
+        let mut state = PropertyBrowserState::new(vm_moref(), None)
+            .await
+            .expect("new");
+        let empty_enter = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Enter,
+            obj: vm_moref(),
+            change_set: Some(Vec::new()),
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![empty_enter]).expect("process_update");
+        assert!(state.properties.is_empty());
+        assert!(state.loaded_but_empty, "empty-enter must flip the flag");
+    }
+
+    #[tokio::test]
+    async fn successful_update_after_empty_enter_clears_loaded_but_empty() {
+        let mut state = PropertyBrowserState::new(vm_moref(), None)
+            .await
+            .expect("new");
+        let empty_enter = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Enter,
+            obj: vm_moref(),
+            change_set: None,
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![empty_enter]).expect("empty enter");
+        assert!(state.loaded_but_empty);
+
+        let real_update = ObjectUpdate {
+            kind: ObjectUpdateKindEnum::Modify,
+            obj: vm_moref(),
+            change_set: Some(vec![PropertyChange {
+                name: "name".into(),
+                op: PropertyChangeOpEnum::Assign,
+                val: Some(VimAny::Value(ValueElements::PrimitiveString(
+                    "late-arrival".into(),
+                ))),
+            }]),
+            missing_set: None,
+        };
+        Cache::process_update(&mut state, vec![real_update]).expect("modify");
+        assert!(
+            !state.loaded_but_empty,
+            "successful apply_update must clear the flag"
+        );
+        assert!(!state.items.is_empty());
+    }
+
+    #[tokio::test]
     async fn process_update_ignores_wrong_object_id() {
         let mut state = PropertyBrowserState::new(vm_moref(), None)
             .await
@@ -939,6 +1121,7 @@ mod unicode_tests {
             },
             items: Vec::new(),
             state: TreeState::default(),
+            loaded_but_empty: false,
         }
     }
 

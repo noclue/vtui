@@ -14,9 +14,14 @@ vim_updatable!(
     struct ClusterDetails: ClusterComputeResource {
         name = "name",
         overall_status = "overall_status",
-        available_cpu = "summary_ex.effective_cpu",
-        available_memory = "summary_ex.effective_memory",
-        number_of_hosts = "summary_ex.num_hosts",
+        // `summary_ex` and its effective_* / num_hosts children are XSD-required,
+        // but vcsim (and older real vCenters in transient states) omit them.
+        // The trailing `?` forces these to be `Option<T>` so a missing value
+        // does not drop the whole object from the cache. See
+        // `vim_updatable!` docs for details.
+        available_cpu = "summary_ex.effective_cpu"?,
+        available_memory = "summary_ex.effective_memory"?,
+        number_of_hosts = "summary_ex.num_hosts"?,
         drs = "configuration.drs_config.enabled",
         ha = "configuration.das_config.enabled",
         hosts = "host.length",
@@ -28,14 +33,18 @@ vim_updatable!(
 impl From<&ClusterDetails> for Row<'_> {
     fn from(cluster: &ClusterDetails) -> Self {
         let status_color = status_color(&cluster.overall_status);
-        let cpu = Cell::from(format!("{:.2} GHz", cluster.available_cpu as f32 / 1000.0));
-        let memory = if cluster.available_memory > 1024 {
-            Cell::from(format!(
-                "{:.2} GiB",
-                cluster.available_memory as f32 / 1024.0
-            ))
-        } else {
-            Cell::from(format!("{:.2} MiB", cluster.available_memory as f32))
+        let cpu = match cluster.available_cpu {
+            Some(mhz) => Cell::from(format!("{:.2} GHz", mhz as f32 / 1000.0)),
+            None => Cell::default(),
+        };
+        let memory = match cluster.available_memory {
+            Some(mib) if mib > 1024 => Cell::from(format!("{:.2} GiB", mib as f32 / 1024.0)),
+            Some(mib) => Cell::from(format!("{:.2} MiB", mib as f32)),
+            None => Cell::default(),
+        };
+        let number_of_hosts = match cluster.number_of_hosts {
+            Some(n) => Cell::from(n.to_string()),
+            None => Cell::default(),
         };
         let drs = if matches!(cluster.drs, Some(true)) {
             Cell::from(Span::styled("✓", Style::default().fg(Color::Green)))
@@ -62,7 +71,7 @@ impl From<&ClusterDetails> for Row<'_> {
             Cell::from(cluster.id.value.clone()),
             Cell::from(Span::from(STATUS).style(status_color)),
             Cell::from(cluster.name.clone()),
-            Cell::from(cluster.number_of_hosts.to_string()),
+            number_of_hosts,
             cpu,
             memory,
             drs,

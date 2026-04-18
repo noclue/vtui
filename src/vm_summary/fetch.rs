@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use log::{debug, info};
 use vim_rs::core::client::VimClientHandle;
 use vim_rs::core::pc_retrieve::ObjectRetriever;
@@ -85,71 +85,76 @@ pub async fn fetch_vm_summary(
         "vm summary fetch: start vm={label}"
     );
     let retriever = ObjectRetriever::new(client.clone()).map_err(anyhow::Error::from)?;
-    let mut rows = retriever
-        .retrieve_objects_from_list::<VmSummaryProps>(std::slice::from_ref(&vm))
+    let props_option = retriever
+        .retrieve_object::<VmSummaryProps>(&vm)
         .await
         .map_err(anyhow::Error::from)
         .with_context(|| format!("VM summary retrieve failed for {label}"))?;
-    let mut row = rows
-        .pop()
-        .with_context(|| format!("VM summary: empty retrieve result for {label}"))?;
+    let Some(mut vm_props) = props_option else {
+        bail!("VM summary: empty retrieve result for {label}");
+    };
 
-    let device_count = row.devices.as_ref().map(|d| d.len()).unwrap_or(0);
+    debug!(
+        target: "vm_summary",
+        "vm summary fetch: retrieved vm={label} name={}",
+        vm_props.name,
+    );
+    let device_count = vm_props.devices.as_ref().map(|d| d.len()).unwrap_or(0);
     debug!(
         target: "vm_summary",
         "vm summary fetch: retrieved vm={label} name={} config.hardware.device count={device_count}",
-        row.name
+        vm_props.name
     );
 
     let vm_id = vm.value.clone();
-    let vm_name = row.name.clone();
+    let vm_name = vm_props.name.clone();
 
-    let guest_os = row.guest_os.clone();
-    let overall_status = row.overall_status.clone();
-    let power_state = row.power_state.clone();
+    let guest_os = vm_props.guest_os.clone();
+    let overall_status = vm_props.overall_status.clone();
+    let power_state = vm_props.power_state.clone();
 
-    let uptime_seconds = row.uptime_seconds;
-    let primary_ip = first_nonempty_opt(row.ip_guest.clone(), row.ip_summary.clone());
+    let uptime_seconds = vm_props.uptime_seconds;
+    let primary_ip = first_nonempty_opt(vm_props.ip_guest.clone(), vm_props.ip_summary.clone());
 
     let tools_ver_status = first_nonempty_str(
-        row.tools_version_2_guest.as_deref(),
-        row.tools_version_2_summary.as_deref(),
+        vm_props.tools_version_2_guest.as_deref(),
+        vm_props.tools_version_2_summary.as_deref(),
     );
-    if row.tools_version_2_guest.as_deref() != row.tools_version_2_summary.as_deref() {
+    if vm_props.tools_version_2_guest.as_deref() != vm_props.tools_version_2_summary.as_deref() {
         debug!(
             target: "vm_summary",
             "vm summary fetch: tools versionStatus2 guest={:?} summary={:?}",
-            row.tools_version_2_guest,
-            row.tools_version_2_summary
+            vm_props.tools_version_2_guest,
+            vm_props.tools_version_2_summary
         );
     }
-    let guest_state_s = row.guest_state.as_deref().unwrap_or("").trim();
+    let guest_state_s = vm_props.guest_state.as_deref().unwrap_or("").trim();
     let tools_line = format_vmware_tools_summary(
         guest_state_s,
-        row.tools_version.as_deref(),
+        vm_props.tools_version.as_deref(),
         tools_ver_status,
     );
 
-    let vcpu_count = row.num_cpu;
-    let memory_size_mb = row.memory_size_mb;
-    let host_memory_usage_mb = row.host_memory_usage_mb;
+    let vcpu_count = vm_props.num_cpu;
+    let memory_size_mb = vm_props.memory_size_mb;
+    let host_memory_usage_mb = vm_props.host_memory_usage_mb;
 
-    let disk_used_bytes = row
+    let disk_used_bytes = vm_props
         .storage
         .as_ref()
         .map(|s: &VirtualMachineStorageSummary| s.committed);
 
-    let cpu_usage_mhz = row.overall_cpu_usage_mhz;
+    let cpu_usage_mhz = vm_props.overall_cpu_usage_mhz;
 
-    let host = if let Some(ref host_mor) = row.host {
+    let host = if let Some(ref host_mor) = vm_props.host {
         resolve_host_display(client.clone(), host_mor).await?
     } else {
         None
     };
 
-    let guest_nics: Vec<GuestNicInfo> = row.guest_network.take().unwrap_or_default();
+    let guest_nics: Vec<GuestNicInfo> = vm_props.guest_network.take().unwrap_or_default();
     let guest_nic_count = guest_nics.len();
-    let mut hardware = collect_hardware_nics(&row);
+    let mut hardware = collect_hardware_nics(&vm_props);
     let hardware_nic_count = hardware.len();
     resolve_dv_portgroup_network_labels(client.clone(), &mut hardware).await?;
     let networking = merge_network_rows(hardware, guest_nics);
@@ -159,7 +164,7 @@ pub async fn fetch_vm_summary(
         networking.len(),
     );
 
-    let disk_builds = collect_disk_builds(&row);
+    let disk_builds = collect_disk_builds(&vm_props);
     if device_count > 0 && disk_builds.is_empty() {
         debug!(
             target: "vm_summary",
@@ -292,7 +297,7 @@ async fn resolve_datastore_names(
         .await
         .map_err(anyhow::Error::from)?;
     let mut map = HashMap::with_capacity(rows.len());
-    for (mor, row) in refs.iter().zip(rows.into_iter()) {
+    for (mor, row) in refs.iter().zip(rows) {
         map.insert(ds_key(mor), format!("{} ({})", row.name, mor.value));
     }
     Ok(map)
@@ -469,7 +474,7 @@ async fn resolve_dv_portgroup_names_by_mo_id(
         .await
         .map_err(anyhow::Error::from)?;
 
-    for (id, row) in mo_ids.iter().zip(rows.into_iter()) {
+    for (id, row) in mo_ids.iter().zip(rows) {
         let label = format!("{} ({})", row.name, id);
         out.insert(id.clone(), label);
     }
