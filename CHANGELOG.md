@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-04-18
+
 ### Fixed
 
 - **Cluster inventory table:** `summary_ex.effective_cpu`, `effective_memory`, and `num_hosts` are now optional in the PropertyCollector cache. vcsim sometimes omits these fields even though the API marks them required; previously the whole cluster row disappeared from the table. Missing values render as empty cells instead of dropping the row.
 - **Managed-object property browser:** when the server sends an `Enter`/`Modify` with no property values (empty or missing `change_set`), the body no longer renders as a blank black area. You see either **Loading properties…** while waiting for the first update, or a centered explanation when the server truly returned no properties (common with vcsim facade objects such as `EnvironmentBrowser`, or heavily permission-stripped objects). WARN-level logs explain the empty-data case; empty `change_set` after data already arrived is logged at INFO without clearing the tree.
 - Exit without error when no configuration is specified to ease WinGet testing pipelines.
-
 
 ## [0.2.5] - 2026-04-12
 
