@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use log::{debug, info};
 use vim_rs::core::client::VimClientHandle;
 use vim_rs::core::pc_retrieve::ObjectRetriever;

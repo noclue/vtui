@@ -416,9 +416,7 @@ impl Cache for PropertyBrowserState {
                             if self.properties.is_empty() {
                                 warn!(
                                     "PropertyBrowserState::process_update obj={}:{} kind={:?}: server returned no property values (filter all=true); rendering empty-object placeholder",
-                                    obj_type,
-                                    update.obj.value,
-                                    update.kind
+                                    obj_type, update.obj.value, update.kind
                                 );
                                 self.loaded_but_empty = true;
                             } else {
