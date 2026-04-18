@@ -297,7 +297,7 @@ async fn resolve_datastore_names(
         .await
         .map_err(anyhow::Error::from)?;
     let mut map = HashMap::with_capacity(rows.len());
-    for (mor, row) in refs.iter().zip(rows.into_iter()) {
+    for (mor, row) in refs.iter().zip(rows) {
         map.insert(ds_key(mor), format!("{} ({})", row.name, mor.value));
     }
     Ok(map)
@@ -474,7 +474,7 @@ async fn resolve_dv_portgroup_names_by_mo_id(
         .await
         .map_err(anyhow::Error::from)?;
 
-    for (id, row) in mo_ids.iter().zip(rows.into_iter()) {
+    for (id, row) in mo_ids.iter().zip(rows) {
         let label = format!("{} ({})", row.name, id);
         out.insert(id.clone(), label);
     }
