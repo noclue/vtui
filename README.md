@@ -282,3 +282,15 @@ cargo run --bin vtui
 
 Contributions are welcome. Please fork the repository and submit a pull request with your
 improvements.
+
+New features and bug fixes should include focused tests for the behavior they change. Before
+submitting, run:
+
+```bash
+cargo fmt --check
+cargo clippy
+cargo test
+```
+
+For UI changes, verify that input and redraw remain responsive while background work is pending,
+that terminal resizing behaves correctly, and that dark-theme contrast remains readable.
