@@ -13,6 +13,8 @@ mod config;
 mod event;
 mod hints;
 mod history;
+mod host_summary;
+mod host_summary_ui;
 mod inventory_path;
 mod logging;
 mod operation_types;

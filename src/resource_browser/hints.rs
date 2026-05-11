@@ -23,7 +23,7 @@ const EXPAND_VM: &str = "v vm";
 const EXPAND_TASK: &str = "t task";
 const EXPAND_EVENT: &str = "e events";
 const VM_ACTIONS: &str = "x actions";
-const VM_SUMMARY: &str = "s summary";
+const SHOW_SUMMARY: &str = "s summary";
 
 const CLUSTER_EXPAND_HINTS: &[&str] = &[
     EXPAND_NETWORK,
@@ -35,6 +35,7 @@ const CLUSTER_EXPAND_HINTS: &[&str] = &[
 const HOST_EXPAND_HINTS: &[&str] = &[
     EXPAND_NETWORK,
     EXPAND_DATASTORE,
+    SHOW_SUMMARY,
     EXPAND_VM,
     EXPAND_TASK,
     EXPAND_EVENT,
@@ -42,7 +43,7 @@ const HOST_EXPAND_HINTS: &[&str] = &[
 const DATASTORE_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK, EXPAND_EVENT];
 const NETWORK_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK];
 
-const VM_EXPAND_HINTS: &[&str] = &[VM_SUMMARY, VM_ACTIONS, EXPAND_TASK, EXPAND_EVENT];
+const VM_EXPAND_HINTS: &[&str] = &[SHOW_SUMMARY, VM_ACTIONS, EXPAND_TASK, EXPAND_EVENT];
 pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static str] {
     match resource_type {
         ResourceType::Cluster => CLUSTER_EXPAND_HINTS,
@@ -51,5 +52,20 @@ pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static
         ResourceType::Network => NETWORK_EXPAND_HINTS,
         ResourceType::VirtualMachine => VM_EXPAND_HINTS,
         ResourceType::Task | ResourceType::Event => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resource_type::ResourceType;
+
+    #[test]
+    fn host_expand_hints_include_vm_summary_key() {
+        let hints = get_expand_hint(ResourceType::Host);
+        assert!(
+            hints.contains(&SHOW_SUMMARY),
+            "expected Host hints to include `{SHOW_SUMMARY}`"
+        );
     }
 }

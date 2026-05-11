@@ -13,6 +13,10 @@ pub enum OperationRequest {
         request_id: OperationId,
         vm: ManagedObjectReference,
     },
+    PrefetchHostSummary {
+        request_id: OperationId,
+        host: ManagedObjectReference,
+    },
     ExecuteInventoryOperation {
         op_id: OperationId,
         op: InventoryOperation,
