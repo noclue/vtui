@@ -1,10 +1,56 @@
 use crate::resource_browser::perf::{PerfRowsSnapshot, PerfSnapshotShare};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
-use ratatui::widgets::Row;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Cell, Row};
 use vim_rs::types::structs::ManagedObjectReference;
 
 pub type SortFn<T> = Box<dyn FnMut(&T, &T) -> std::cmp::Ordering>;
+
+/// Render-time column visibility and Ratatui width constraints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnLayout {
+    pub visible_indices: Vec<usize>,
+    pub constraints: Vec<Constraint>,
+}
+
+/// Build header cells for visible logical columns; sort arrow uses logical `sort_column` index.
+pub fn project_header(
+    header_row: &[&str],
+    visible_indices: &[usize],
+    sort_setting: Option<(usize, bool)>,
+) -> Vec<Cell<'static>> {
+    visible_indices
+        .iter()
+        .map(|&logical_idx| {
+            let label = header_row
+                .get(logical_idx)
+                .copied()
+                .unwrap_or("")
+                .to_string();
+            if let Some((sort_col, descending)) = sort_setting
+                && logical_idx == sort_col
+            {
+                let arrow_span = if descending {
+                    Span::styled("▼", Style::default().fg(Color::Blue))
+                } else {
+                    Span::styled("▲", Style::default().fg(Color::Green))
+                };
+                return Cell::from(Line::from(vec![Span::from(label), arrow_span]));
+            }
+            Cell::from(label)
+        })
+        .collect()
+}
+
+/// Select cells by logical column index (caller supplies full cell vector).
+pub fn project_cells(cells: &[Cell<'static>], visible_indices: &[usize]) -> Vec<Cell<'static>> {
+    visible_indices
+        .iter()
+        .filter_map(|&i| cells.get(i).cloned())
+        .collect()
+}
 
 /// Trait for objects that can be displayed in a table. This exposes the static information
 /// about the table, such as the title, column sizes, and header row. It also provides
@@ -38,6 +84,26 @@ pub trait TabularData {
 /// Build a table row, optionally using live performance history (VM/Host CPU/mem sparklines).
 pub trait InventoryRowBuilder: TabularData {
     fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static>;
+
+    /// Full-width cell vector in [`Self::header_row`] column order for layout projection.
+    fn table_cells(&self, _perf: Option<&PerfRowsSnapshot>) -> Vec<Cell<'static>> {
+        vec![]
+    }
+
+    fn inventory_row_for_layout(
+        &self,
+        perf: Option<&PerfRowsSnapshot>,
+        layout: &ColumnLayout,
+    ) -> Row<'static> {
+        if layout.visible_indices.len() >= Self::header_row().len() {
+            return self.inventory_row(perf);
+        }
+        let cells = self.table_cells(perf);
+        if cells.is_empty() {
+            return self.inventory_row(perf);
+        }
+        Row::new(project_cells(&cells, &layout.visible_indices))
+    }
 }
 
 /// Trait for data sources that can be displayed in a table.
@@ -71,4 +137,21 @@ pub trait TableDataSource {
 
     /// VM/Host tables pass a shared perf snapshot; other sources ignore it.
     fn set_perf_snapshot(&mut self, _perf: Option<PerfSnapshotShare>) {}
+
+    /// Width-aware column set; default shows every column at static [`column_sizes`].
+    fn column_layout(&self, _columns_budget: u16) -> ColumnLayout {
+        let header_len = self.header_row().len();
+        ColumnLayout {
+            visible_indices: (0..header_len).collect(),
+            constraints: self.column_sizes(),
+        }
+    }
+
+    fn iter_for_layout<'a>(
+        &'a mut self,
+        layout: &ColumnLayout,
+    ) -> Box<dyn Iterator<Item = Row<'static>> + 'a> {
+        let _ = layout;
+        self.iter()
+    }
 }

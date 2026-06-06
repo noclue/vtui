@@ -1,7 +1,8 @@
 //! Host summary modal: loading, scrollable content, scrollbar.
 
 use crate::host_summary::{
-    HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow, LOG_TARGET,
+    HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow,
+    LOG_TARGET,
 };
 use crate::operation_types::OperationId;
 use crate::resource_browser::formatting::{
@@ -313,10 +314,10 @@ fn max_line_scroll_offset(n_lines: usize, viewport_h: u16) -> u16 {
 
 fn summary_popup_rect(r: Rect) -> Rect {
     const SIDE_MARGIN: u16 = 2;
-    let avail_w = r.width.saturating_sub(SIDE_MARGIN * 2);
-    let avail_h = r.height.saturating_sub(SIDE_MARGIN * 2);
-    let w = avail_w.max(20);
-    let h = (avail_h * 80 / 100).max(8).min(avail_h);
+    let max_w = r.width.saturating_sub(SIDE_MARGIN * 2).max(1);
+    let max_h = r.height.saturating_sub(SIDE_MARGIN * 2).max(1);
+    let w = max_w;
+    let h = (max_h * 80 / 100).max(8.min(max_h)).min(max_h);
     Rect {
         x: r.x + SIDE_MARGIN,
         y: r.y + (r.height.saturating_sub(h)) / 2,
@@ -969,6 +970,16 @@ mod tests {
         HostSystemConnectionStateEnum, HostSystemPowerStateEnum, ManagedEntityStatusEnum,
         VirtualMachinePowerStateEnum,
     };
+
+    #[test]
+    fn summary_popup_rect_fits_narrow_terminal() {
+        let frame = Rect::new(0, 0, 20, 35);
+        let popup = summary_popup_rect(frame);
+        assert_eq!(popup.width, 16);
+        assert_eq!(popup.x, 2);
+        assert!(popup.x + popup.width <= frame.x + frame.width);
+        assert!(popup.y + popup.height <= frame.y + frame.height);
+    }
 
     fn minimal_summary() -> HostSummary {
         HostSummary {

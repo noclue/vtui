@@ -1,9 +1,11 @@
 use crate::resource_browser::formatting::{self, format_compact_mem_bytes, format_compact_mhz};
-use crate::resource_browser::formatting::{
-    ID_COLUMN_WIDTH, STATUS, STATUS_COLUMN_WIDTH, format_byte_size, sparkline_from_perf_samples,
-};
+use crate::resource_browser::formatting::{STATUS, format_byte_size, sparkline_from_perf_samples};
 use crate::resource_browser::perf::PerfRowsSnapshot;
 use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
+use crate::resource_browser::vm_layout::{
+    VM_CPU_WIDTH, VM_ID_COLUMN_WIDTH, VM_MEMORY_WIDTH, VM_OS_WIDTH, VM_POWER_WIDTH,
+    VM_STATUS_WIDTH, VM_USED_SPACE_WIDTH,
+};
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style, Stylize};
@@ -29,7 +31,7 @@ const POWER_OFF: &str = "○ ";
 const SUSPENDED: &str = "◐ ";
 
 impl InventoryRowBuilder for VmData {
-    fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+    fn table_cells(&self, perf: Option<&PerfRowsSnapshot>) -> Vec<Cell<'static>> {
         let color = formatting::status_color(&self.status);
         let power_state = match self.power_state {
             VirtualMachinePowerStateEnum::PoweredOn => {
@@ -68,7 +70,7 @@ impl InventoryRowBuilder for VmData {
         let host_cpu = Cell::from(format!("{spark_cpu}{cap_cpu}"));
         let host_memory = Cell::from(format!("{spark_mem}{cap_mem}"));
 
-        Row::new(vec![
+        vec![
             Cell::from(self.id.value.clone()),
             Cell::from(Span::from(STATUS).style(color)),
             Cell::from(power_state),
@@ -77,7 +79,11 @@ impl InventoryRowBuilder for VmData {
             used_space,
             host_cpu,
             host_memory,
-        ])
+        ]
+    }
+
+    fn inventory_row(&self, perf: Option<&PerfRowsSnapshot>) -> Row<'static> {
+        Row::new(self.table_cells(perf))
     }
 }
 
@@ -87,14 +93,14 @@ impl TabularData for VmData {
     }
     fn column_sizes() -> Vec<Constraint> {
         vec![
-            Constraint::Length(ID_COLUMN_WIDTH),
-            Constraint::Length(STATUS_COLUMN_WIDTH),
-            Constraint::Length(2),
+            Constraint::Length(VM_ID_COLUMN_WIDTH),
+            Constraint::Length(VM_STATUS_WIDTH),
+            Constraint::Length(VM_POWER_WIDTH),
             Constraint::Fill(1),
-            Constraint::Max(15),
-            Constraint::Max(12),
-            Constraint::Length(10),
-            Constraint::Length(11),
+            Constraint::Length(VM_OS_WIDTH),
+            Constraint::Length(VM_USED_SPACE_WIDTH),
+            Constraint::Length(VM_CPU_WIDTH),
+            Constraint::Length(VM_MEMORY_WIDTH),
         ]
     }
 
@@ -208,5 +214,17 @@ mod tests {
         let large = sample_vm("2", "b", None, Some(9_000));
         let mut cmp = VmData::sort_by_column(5, false).expect("column 5 sortable");
         assert_eq!(cmp(&small, &large), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn matches_filter_by_id_when_id_column_hidden_in_layout() {
+        let vm = sample_vm("vm-hidden-99", "short", Some("Windows"), None);
+        assert!(vm.matches_filter("hidden-99"));
+    }
+
+    #[test]
+    fn matches_filter_by_os_when_os_column_hidden_in_layout() {
+        let vm = sample_vm("vm-1", "short", Some("Ubuntu Linux"), None);
+        assert!(vm.matches_filter("ubuntu"));
     }
 }

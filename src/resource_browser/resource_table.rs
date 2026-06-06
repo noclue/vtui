@@ -1,10 +1,11 @@
-use crate::resource_browser::tabular_data::TableDataSource;
+use crate::resource_browser::tabular_data::{TableDataSource, project_header};
+use crate::resource_browser::vm_layout::TABLE_HIGHLIGHT_PREFIX_WIDTH;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Cell, HighlightSpacing, Padding, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    Block, HighlightSpacing, Padding, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
     StatefulWidget, Table, TableState,
 };
 use vim_rs::types::enums::MoTypesEnum;
@@ -99,30 +100,14 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
 
         let sort_setting = self.resources.get_sort_setting();
         let header_row = self.resources.header_row();
-        let mut header = Vec::with_capacity(header_row.len());
-        for (i, col) in header_row.iter().enumerate() {
-            if let Some(sort_setting) = sort_setting {
-                if i == sort_setting.0 {
-                    let arrow_span = if sort_setting.1 {
-                        Span::styled("▼", Style::default().fg(Color::Blue))
-                    } else {
-                        Span::styled("▲", Style::default().fg(Color::Green))
-                    };
-                    header.push(Cell::from(ratatui::text::Line::from(vec![
-                        Span::from(*col),
-                        arrow_span,
-                    ])));
-                } else {
-                    header.push(Cell::from(*col));
-                }
-            } else {
-                header.push(Cell::from(*col));
-            }
-        }
-
-        let header = Row::new(header).style(Style::default().fg(Color::Cyan));
-
-        let widths = self.resources.column_sizes();
+        let columns_budget = inner.width.saturating_sub(TABLE_HIGHLIGHT_PREFIX_WIDTH);
+        let layout = self.resources.column_layout(columns_budget);
+        let header = Row::new(project_header(
+            &header_row,
+            &layout.visible_indices,
+            sort_setting,
+        ))
+        .style(Style::default().fg(Color::Cyan));
 
         if state.selected().is_none() && !self.resources.is_empty() {
             state.select(Some(0));
@@ -132,9 +117,9 @@ impl<'a> StatefulWidget for ResourceTableWidget<'a> {
             .position(state.selected().unwrap_or(0))
             .viewport_content_length(inner.height.saturating_sub(1) as usize);
 
-        let rows = self.resources.iter();
+        let rows = self.resources.iter_for_layout(&layout);
 
-        let table = Table::new(rows, widths)
+        let table = Table::new(rows, layout.constraints.clone())
             .block(block)
             .header(header)
             .highlight_spacing(HighlightSpacing::Always)
@@ -329,5 +314,183 @@ mod snapshot_tests {
         ));
         let mut state = TableState::default();
         assert_snapshot!(draw_table(&mut mock, &parent, &mut state, 80, 16));
+    }
+
+    mod vm_responsive {
+        use super::*;
+        use crate::resource_browser::tabular_data::{ColumnLayout, project_cells, project_header};
+        use crate::resource_browser::vm_layout::{TABLE_HIGHLIGHT_PREFIX_WIDTH, vm_column_layout};
+
+        /// Eight-column VM fixture with responsive `column_layout`.
+        struct VmResponsiveMockSource {
+            rows: Vec<Vec<Cell<'static>>>,
+            sort: Option<(usize, bool)>,
+        }
+
+        impl VmResponsiveMockSource {
+            fn sample_row() -> Vec<Cell<'static>> {
+                vec![
+                    Cell::from("vm-1001"),
+                    Cell::from("● "),
+                    Cell::from("● "),
+                    Cell::from("production-database-replica-east"),
+                    Cell::from("Ubuntu Linux 64-bit"),
+                    Cell::from("120.5 GB"),
+                    Cell::from("▁▂▃  250MHz"),
+                    Cell::from("▁▂▃  4.0G"),
+                ]
+            }
+
+            fn new() -> Self {
+                Self {
+                    rows: vec![Self::sample_row()],
+                    sort: None,
+                }
+            }
+        }
+
+        impl TableDataSource for VmResponsiveMockSource {
+            fn get_title(&self) -> &'static str {
+                "Virtual Machines"
+            }
+            fn set_filter(&mut self, _: Option<String>) {}
+            fn get_filter(&self) -> Option<String> {
+                None
+            }
+            fn set_sort_column(&mut self, _: Option<usize>) {}
+            fn get_sort_setting(&self) -> Option<(usize, bool)> {
+                self.sort
+            }
+            fn set_sort_setting(&mut self, column: usize, descending: bool) {
+                self.sort = Some((column, descending));
+            }
+            fn iter<'a>(&'a mut self) -> Box<dyn Iterator<Item = Row<'static>> + 'a> {
+                let layout = vm_column_layout(u16::MAX);
+                self.iter_for_layout(&layout)
+            }
+            fn is_empty(&mut self) -> bool {
+                self.rows.is_empty()
+            }
+            fn len(&mut self) -> usize {
+                self.rows.len()
+            }
+            fn total_count(&self) -> usize {
+                self.rows.len()
+            }
+            fn column_sizes(&self) -> Vec<Constraint> {
+                vm_column_layout(u16::MAX).constraints
+            }
+            fn header_row(&self) -> Vec<&'static str> {
+                vec![
+                    "ID ",
+                    "S ",
+                    "P ",
+                    "Name ",
+                    "OS ",
+                    "Used Space ",
+                    "CPU ",
+                    "Memory ",
+                ]
+            }
+            fn invalidate(&mut self) {}
+            fn item_at_index(&mut self, _: usize) -> Option<(ManagedObjectReference, String)> {
+                None
+            }
+            fn resource_type(&self) -> ResourceType {
+                ResourceType::VirtualMachine
+            }
+            fn column_layout(&self, columns_budget: u16) -> ColumnLayout {
+                vm_column_layout(columns_budget)
+            }
+            fn iter_for_layout<'a>(
+                &'a mut self,
+                layout: &ColumnLayout,
+            ) -> Box<dyn Iterator<Item = Row<'static>> + 'a> {
+                let visible = layout.visible_indices.clone();
+                Box::new(
+                    self.rows
+                        .iter()
+                        .map(move |cells| Row::new(project_cells(cells, &visible))),
+                )
+            }
+        }
+
+        /// `columns_budget = inner.width - highlight`; inner.width ≈ outer - 3 (borders + right pad).
+        fn outer_width_for_columns_budget(columns_budget: u16) -> u16 {
+            columns_budget + TABLE_HIGHLIGHT_PREFIX_WIDTH + 3
+        }
+
+        fn draw_vm_table(mock: &mut VmResponsiveMockSource, outer_width: u16) -> String {
+            let parent = None;
+            let mut state = TableState::default();
+            let mut term = Terminal::new(TestBackend::new(outer_width, 14)).unwrap();
+            term.draw(|f| {
+                let w = ResourceTableWidget::new(mock, &parent);
+                f.render_stateful_widget(w, f.area(), &mut state);
+            })
+            .unwrap();
+            format!("{}", term.backend())
+        }
+
+        #[test]
+        fn sort_arrow_on_visible_os_not_on_name_only_layout() {
+            let header = [
+                "ID ",
+                "S ",
+                "P ",
+                "Name ",
+                "OS ",
+                "Used Space ",
+                "CPU ",
+                "Memory ",
+            ];
+            let name_only = vm_column_layout(25).visible_indices;
+            let with_os = vm_column_layout(55).visible_indices;
+            let hidden = project_header(&header, &name_only, Some((4, false)));
+            let visible = project_header(&header, &with_os, Some((4, false)));
+            let hidden_text = format!("{hidden:?}");
+            let visible_text = format!("{visible:?}");
+            assert!(!hidden_text.contains('▲'));
+            assert!(visible_text.contains('▲'));
+        }
+
+        #[test]
+        fn vm_table_name_only_snapshot() {
+            let mut mock = VmResponsiveMockSource::new();
+            assert_snapshot!(draw_vm_table(&mut mock, outer_width_for_columns_budget(25)));
+        }
+
+        #[test]
+        fn vm_table_tier_status_power_snapshot() {
+            let mut mock = VmResponsiveMockSource::new();
+            assert_snapshot!(draw_vm_table(&mut mock, outer_width_for_columns_budget(30)));
+        }
+
+        #[test]
+        fn vm_table_tier_with_id_snapshot() {
+            let mut mock = VmResponsiveMockSource::new();
+            assert_snapshot!(draw_vm_table(&mut mock, outer_width_for_columns_budget(39)));
+        }
+
+        #[test]
+        fn vm_table_tier_with_os_snapshot() {
+            let mut mock = VmResponsiveMockSource::new();
+            assert_snapshot!(draw_vm_table(&mut mock, outer_width_for_columns_budget(55)));
+        }
+
+        #[test]
+        fn vm_table_tier_with_used_space_snapshot() {
+            let mut mock = VmResponsiveMockSource::new();
+            assert_snapshot!(draw_vm_table(&mut mock, outer_width_for_columns_budget(68)));
+        }
+
+        #[test]
+        fn vm_table_full_width_snapshot() {
+            let mut mock = VmResponsiveMockSource::new();
+            assert_snapshot!(draw_vm_table(
+                &mut mock,
+                outer_width_for_columns_budget(120)
+            ));
+        }
     }
 }

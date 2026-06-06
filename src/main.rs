@@ -95,8 +95,7 @@ async fn init_vim_client(cfg: &config::ResolvedConfig) -> Result<VimClientHandle
         "soap" => TransportMode::Soap,
         _ => return Err(anyhow::anyhow!("Invalid protocol: {}", cfg.protocol)),
     };
-    let mut http_builder = reqwest::Client::builder()
-                  .cookie_store(true);
+    let mut http_builder = reqwest::Client::builder().cookie_store(true);
     if cfg.insecure {
         http_builder = http_builder
             .danger_accept_invalid_certs(true)

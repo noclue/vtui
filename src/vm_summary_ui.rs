@@ -301,10 +301,10 @@ fn max_line_scroll_offset(n_lines: usize, viewport_h: u16) -> u16 {
 fn summary_popup_rect(r: Rect) -> Rect {
     // Horizontal margin: leave this many terminal columns free on each side of the dialog.
     const SIDE_MARGIN: u16 = 2;
-    let avail_w = r.width.saturating_sub(SIDE_MARGIN * 2);
-    let avail_h = r.height.saturating_sub(SIDE_MARGIN * 2);
-    let w = avail_w.max(20);
-    let h = (avail_h * 80 / 100).max(8).min(avail_h);
+    let max_w = r.width.saturating_sub(SIDE_MARGIN * 2).max(1);
+    let max_h = r.height.saturating_sub(SIDE_MARGIN * 2).max(1);
+    let w = max_w;
+    let h = (max_h * 80 / 100).max(8.min(max_h)).min(max_h);
     Rect {
         x: r.x + SIDE_MARGIN,
         y: r.y + (r.height.saturating_sub(h)) / 2,
@@ -709,4 +709,29 @@ fn truncate(s: &str, max: usize) -> String {
     }
     let t: String = s.chars().take(max.saturating_sub(1)).collect();
     format!("{t}…")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    fn summary_popup_rect_fits_narrow_terminal() {
+        let frame = Rect::new(0, 0, 20, 35);
+        let popup = summary_popup_rect(frame);
+        assert_eq!(popup.width, 16);
+        assert_eq!(popup.x, 2);
+        assert!(popup.x + popup.width <= frame.x + frame.width);
+        assert!(popup.y + popup.height <= frame.y + frame.height);
+    }
+
+    #[test]
+    fn render_loading_fits_narrow_terminal() {
+        let mut ui = VmSummaryUi::default();
+        ui.start_loading(1);
+        let mut term = Terminal::new(TestBackend::new(20, 35)).unwrap();
+        term.draw(|f| ui.render(f)).unwrap();
+    }
 }
