@@ -1,21 +1,19 @@
 //! Async fetch and assembly of [`HostSummary`](super::HostSummary).
 
-use std::cmp::Ordering;
-
 use anyhow::{Context, bail};
 use log::{debug, warn};
 use vim_rs::core::client::VimClientHandle;
 use vim_rs::core::pc_retrieve::ObjectRetriever;
 use vim_rs::types::structs::{
-    HostGraphicsInfo, HostMemoryTierInfo, HostNvmeNamespace, HostNvmeTopology, HostScsiDisk,
-    ManagedObjectReference, VirtualMachineStorageSummary,
+    HostGraphicsInfo, HostMemoryTierInfo, HostScsiDisk, ManagedObjectReference,
+    VirtualMachineStorageSummary,
 };
 use vim_rs::types::traits::ScsiLunTrait;
 use vim_rs::vim_retrievable;
 
 use crate::host_summary::{
-    HostDiskRow, HostDiskSource, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary,
-    HostVmRow, LOG_TARGET, cap_vm_refs, cmp_natural_device_name,
+    HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow,
+    LOG_TARGET, cap_vm_refs, cmp_natural_device_name,
 };
 use crate::inventory_path::resolve_inventory_path;
 
@@ -40,7 +38,6 @@ vim_retrievable!(
         memory_tier_info = "hardware.memory_tier_info",
         pnics = "config.network.pnic",
         scsi_luns = "config.storage_device.scsi_lun",
-        nvme_topology = "config.storage_device.nvme_topology",
         graphics_info = "config.graphics_info",
         vm_refs = "vm",
     }
@@ -96,13 +93,8 @@ pub async fn fetch_host_summary(
     let mut nics = map_pnics(props.pnics.take());
     nics.sort_by(|a, b| cmp_natural_device_name(&a.device, &b.device));
 
-    let mut scsi_disks = map_scsi_disks(props.scsi_luns.take());
-    let nvme_disks = map_nvme_disks(props.nvme_topology.take());
-    scsi_disks.extend(nvme_disks);
-    scsi_disks.sort_by(|a, b| match a.source.cmp(&b.source) {
-        Ordering::Equal => a.device_name.cmp(&b.device_name),
-        o => o,
-    });
+    let mut disks = map_scsi_disks(props.scsi_luns.take());
+    disks.sort_by(|a, b| cmp_natural_device_name(&a.device_name, &b.device_name));
 
     let memory_tiers = map_memory_tiers(
         props.memory_tiering_type.as_deref(),
@@ -152,7 +144,7 @@ pub async fn fetch_host_summary(
         target: LOG_TARGET,
         "host summary fetch: ok host={label} name={host_name} nics={} disks={} vms={}/{}",
         nics.len(),
-        scsi_disks.len(),
+        disks.len(),
         vms.len(),
         total_vm_count
     );
@@ -176,7 +168,7 @@ pub async fn fetch_host_summary(
         hw_num_cpu_threads: props.hw_num_cpu_threads,
         hw_memory_size_bytes: props.hw_memory_size_bytes,
         nics,
-        disks: scsi_disks,
+        disks,
         memory_tiers,
         graphics,
         vms,
@@ -236,7 +228,6 @@ fn map_scsi_disks(luns: Option<Vec<Box<dyn ScsiLunTrait>>>) -> Vec<HostDiskRow> 
             capacity_bytes,
             ssd: disk.ssd,
             local: disk.local_disk,
-            source: HostDiskSource::Scsi,
         });
     }
     out
@@ -248,60 +239,6 @@ fn scsi_capacity_bytes(disk: &HostScsiDisk) -> Option<u64> {
         return None;
     }
     let b = (c.block as u128).saturating_mul(c.block_size as u128);
-    Some(u64::try_from(b.min(u128::from(u64::MAX))).unwrap_or(u64::MAX))
-}
-
-fn map_nvme_disks(topo: Option<HostNvmeTopology>) -> Vec<HostDiskRow> {
-    let Some(topo) = topo else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    let adapters = topo.adapter.unwrap_or_default();
-    for iface in adapters {
-        let ctlrs = iface.connected_controller.unwrap_or_default();
-        for ctl in ctlrs {
-            let vendor = nonempty_opt(ctl.vendor_id.clone());
-            let model = ctl.model.clone();
-            let nss = ctl.attached_namespace.unwrap_or_default();
-            for ns in nss {
-                out.push(nvme_namespace_row(
-                    &iface.adapter,
-                    &ctl.name,
-                    &vendor,
-                    &model,
-                    &ns,
-                ));
-            }
-        }
-    }
-    out
-}
-
-fn nvme_namespace_row(
-    iface_adapter: &str,
-    ctl_name: &str,
-    vendor: &Option<String>,
-    model: &Option<String>,
-    ns: &HostNvmeNamespace,
-) -> HostDiskRow {
-    let device_name = format!("{iface_adapter}/{ctl_name}/{}", ns.name);
-    let capacity_bytes = nvme_capacity_bytes(ns);
-    HostDiskRow {
-        device_name,
-        vendor: vendor.clone(),
-        model: model.clone(),
-        capacity_bytes,
-        ssd: Some(true),
-        local: Some(true),
-        source: HostDiskSource::Nvme,
-    }
-}
-
-fn nvme_capacity_bytes(ns: &HostNvmeNamespace) -> Option<u64> {
-    if ns.capacity_in_blocks <= 0 || ns.block_size <= 0 {
-        return None;
-    }
-    let b = (ns.capacity_in_blocks as u128).saturating_mul(ns.block_size as u128);
     Some(u64::try_from(b.min(u128::from(u64::MAX))).unwrap_or(u64::MAX))
 }
 
@@ -346,48 +283,11 @@ fn map_graphics(list: Option<Vec<HostGraphicsInfo>>) -> Vec<HostGraphicsRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vim_rs::types::structs::{HostNvmeController, HostNvmeTopology, HostNvmeTopologyInterface};
 
     #[test]
     fn memory_tiers_skipped_when_none() {
         assert!(map_memory_tiers(Some("none"), Some(vec![])).is_empty());
         assert!(map_memory_tiers(None, None).is_empty());
-    }
-
-    #[test]
-    fn nvme_rows_when_topology_present() {
-        let topo = HostNvmeTopology {
-            adapter: Some(vec![HostNvmeTopologyInterface {
-                key: "k".into(),
-                adapter: "vmhba65".into(),
-                connected_controller: Some(vec![HostNvmeController {
-                    key: "c".into(),
-                    controller_number: 0,
-                    subnqn: "nqn".into(),
-                    name: "ctl".into(),
-                    associated_adapter: "vmhba65".into(),
-                    transport_type: "tcp".into(),
-                    fused_operation_supported: false,
-                    number_of_queues: 1,
-                    queue_size: 32,
-                    attached_namespace: Some(vec![HostNvmeNamespace {
-                        key: "ns".into(),
-                        name: "ns1".into(),
-                        id: 1,
-                        block_size: 512,
-                        capacity_in_blocks: 10,
-                    }]),
-                    vendor_id: Some("NV".into()),
-                    model: Some("MODEL".into()),
-                    serial_number: None,
-                    firmware_version: None,
-                }]),
-            }]),
-        };
-        let rows = map_nvme_disks(Some(topo));
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].source, HostDiskSource::Nvme);
-        assert_eq!(rows[0].capacity_bytes, Some(5120));
     }
 
     #[tokio::test]

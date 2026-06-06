@@ -5,6 +5,12 @@
 **Status**: Draft  
 **Input**: User description: "We need ESX host summary view similar to the virtual machine summary view. I have jogged notes in /docs/esx_summary.md"
 
+## Clarifications
+
+### Session 2026-06-06
+
+- Q: A local NVMe drive is enumerated by ESXi in both `config.storage_device.scsi_lun` (as `HostScsiDisk`) and `config.storage_device.nvme_topology` (as `HostNvmeNamespace`, with `name` equal to the SCSI `canonical_name`), producing duplicate disk rows. How should the disk table converge these? → A: Show SCSI LUN disks only; drop the NVMe topology source entirely for now to keep the code minimal and avoid duplicates. The disk section is labeled to indicate it lists SCSI LUNs.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Open Host Summary From Host Rows (Priority: P1)
@@ -36,9 +42,9 @@ and graphics devices in one popup.
 
 **Why this priority**: Hardware inventory is the main information gap compared with the VM summary.
 
-**Independent Test**: Can be tested with host summary data containing NICs, SCSI disks, optional NVMe
-namespaces, memory tiers, and graphics devices, verifying each section renders with missing optional
-fields handled gracefully.
+**Independent Test**: Can be tested with host summary data containing NICs, SCSI LUN disks, memory
+tiers, and graphics devices, verifying each section renders with missing optional fields handled
+gracefully.
 
 **Acceptance Scenarios**:
 
@@ -47,9 +53,9 @@ fields handled gracefully.
    and memory usage.
 2. **Given** a host with physical NICs, **When** the summary renders, **Then** NIC rows show device,
    driver, MAC, link speed, and PCI data where available.
-3. **Given** a host with SCSI/SATA/SAS disks and NVMe namespaces, **When** the summary renders,
-   **Then** disks appear in a single disk section with device, vendor, model, capacity, SSD, and local
-   indicators where available.
+3. **Given** a host with SCSI/SATA/SAS/NVMe disks reported as SCSI LUNs, **When** the summary renders,
+   **Then** disks appear in a single SCSI-LUN disk section with device, vendor, model, capacity, SSD,
+   and local indicators where available, with no duplicate row per physical disk.
 4. **Given** memory tiering or graphics information is absent, **When** the summary renders, **Then**
    those optional subsections are omitted rather than showing noisy empty tables.
 
@@ -81,8 +87,8 @@ but the feature remains useful with only hardware summary data.
 - Terminal is resized while the host summary is loading or visible.
 - The host is disconnected or permissions omit `config.storage_device`, `config.network`, or
   hardware summary properties.
-- `config.storage_device.nvme_topology` cannot be retrieved or decoded by the first-pass
-  `vim_retrievable!` struct.
+- A local NVMe drive is reported both as a `HostScsiDisk` in `config.storage_device.scsi_lun` and as
+  a namespace in `config.storage_device.nvme_topology`; the disk table must not show it twice.
 - The selected host disappears or is no longer accessible before the background fetch completes.
 - Inventory path resolution fails even though host summary properties are available.
 - Hosts have no physical NICs, no disks, no graphics devices, no memory tiers, or no VMs.
@@ -121,7 +127,8 @@ but the feature remains useful with only hardware summary data.
   health/runtime status, hardware summary, NIC rows, disk rows, optional memory tiers, optional graphics,
   resident VM rows, and total VM count.
 - **HostPnicRow**: Physical NIC display row built from `config.network.pnic`.
-- **HostDiskRow**: Unified host disk display row built from SCSI LUN disks and NVMe namespaces.
+- **HostDiskRow**: Host disk display row built from SCSI LUN disks (`config.storage_device.scsi_lun`
+  downcast to `HostScsiDisk`); NVMe-topology rows are intentionally excluded to avoid duplicate rows.
 - **HostMemoryTierRow**: Optional memory tier row built from `hardware.memory_tier_info`.
 - **HostGraphicsRow**: Optional graphics device row built from `config.graphics_info`.
 - **HostVmRow**: Resident VM display row built from capped `HostSystem.vm` references and VM summary
@@ -161,5 +168,6 @@ but the feature remains useful with only hardware summary data.
 - The host summary view is available for `HostSystem` rows in the resource browser, not from arbitrary
   property browser nodes.
 - The resident VM table uses point-in-time VM summary properties rather than live perf-worker samples.
-- NVMe retrieval may require a fallback if the nested topology cannot be handled cleanly in the same
-  retrievable struct.
+- The disk table is sourced solely from `config.storage_device.scsi_lun`; ESXi reports local NVMe
+  drives there as `HostScsiDisk`, so a separate NVMe-topology source is unnecessary for Phase 1 and is
+  omitted to keep the code minimal and avoid duplicate rows.

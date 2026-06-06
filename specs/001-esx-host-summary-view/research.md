@@ -82,19 +82,32 @@ implementation. Hardware sections are expected to be small.
 - Fetch all resident VMs: rejected because it can overfetch on dense hosts and violates the bounded
   retrieval requirement.
 
-## Decision: Disk Rows Converge SCSI LUNs and NVMe Namespaces
+## Decision: Disk Rows Come From SCSI LUNs Only
 
-**Decision**: Build one `HostDiskRow` list from `config.storage_device.scsi_lun` downcast to
-`HostScsiDisk` plus `config.storage_device.nvme_topology` namespaces where retrievable.
+**Decision**: Build the `HostDiskRow` list solely from `config.storage_device.scsi_lun` downcast to
+`HostScsiDisk`. Do not read `config.storage_device.nvme_topology`.
 
-**Rationale**: The vSphere API exposes SCSI/SATA/SAS/iSCSI/FC disks and NVMe topology separately, but
-operators need one disk table. Application-level convergence is the clearest display model.
+**Rationale**: ESXi already enumerates local NVMe drives in `scsi_lun` as `HostScsiDisk` (vendor
+`NVMe`), and the same drive also appears in `nvme_topology` as a `HostNvmeNamespace` whose `name`
+equals the SCSI `canonical_name`. The original "SCSI plus NVMe" convergence was an unconditional union
+with no correlation, so every local NVMe drive rendered twice (observed with a WD Blue SN570). The
+`scsi_lun` row is also the richer source: it carries the real `/vmfs/devices/disks/...` device path,
+accurate vendor/model/capacity, and correct `ssd`/`local` flags, whereas NVMe-topology rows only had a
+synthetic device name and hard-coded flags. Dropping the NVMe source removes the duplication and keeps
+the fetch/mapping code minimal.
 
 **Alternatives considered**:
 
-- Show only `scsi_lun`: acceptable fallback if NVMe decoding fails, but not the target behavior.
+- Deduplicate by correlating `HostNvmeNamespace.name` to `ScsiLun.canonical_name` and keep both
+  sources: rejected for now because it adds correlation/state and per-source labeling for no extra
+  operator value while local NVMe is already covered by `scsi_lun`.
+- Prefer the NVMe-topology row over the SCSI row: rejected because the SCSI row carries richer, more
+  accurate fields.
 - Separate SCSI and NVMe sections: rejected because the operator-facing columns overlap and a unified
   inventory is easier to scan.
+
+**Follow-up**: If pure NVMe-over-Fabrics namespaces (not present in `scsi_lun`) must be shown later,
+reintroduce `nvme_topology` with name↔canonical_name dedup against the SCSI list.
 
 ## Decision: Optional Memory Tiering and Graphics Subsections
 

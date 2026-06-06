@@ -1,8 +1,7 @@
 //! Host summary modal: loading, scrollable content, scrollbar.
 
 use crate::host_summary::{
-    HostDiskRow, HostDiskSource, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary,
-    HostVmRow, LOG_TARGET,
+    HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow, LOG_TARGET,
 };
 use crate::operation_types::OperationId;
 use crate::resource_browser::formatting::{
@@ -513,13 +512,6 @@ fn format_connection(cs: &HostSystemConnectionStateEnum) -> &'static str {
     }
 }
 
-fn format_disk_source(src: HostDiskSource) -> &'static str {
-    match src {
-        HostDiskSource::Scsi => "SCSI",
-        HostDiskSource::Nvme => "NVMe",
-    }
-}
-
 fn format_vm_power(ps: &VirtualMachinePowerStateEnum) -> &'static str {
     match ps {
         VirtualMachinePowerStateEnum::PoweredOn => POWER_ON,
@@ -667,7 +659,7 @@ fn build_summary_lines(s: &HostSummary, total_width: usize) -> Vec<Line<'static>
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Disks",
+        "Disks (SCSI LUNs)",
         Style::default()
             .fg(LABEL_COLOR)
             .add_modifier(Modifier::BOLD),
@@ -830,25 +822,24 @@ fn join_table_6_row(a: &str, b: &str, c: &str, sp: &str, e: &str, f: &str) -> St
     format!("{a}{g}{b}{g}{c}{g}{sp}{g}{e}{g}{f}")
 }
 
-fn disk_col_widths(total: usize) -> (usize, usize, usize, usize, usize, usize, usize) {
-    let gaps = 6 * TABLE_COL_GAP;
+fn disk_col_widths(total: usize) -> (usize, usize, usize, usize, usize, usize) {
+    let gaps = 5 * TABLE_COL_GAP;
     let budget = total.saturating_sub(gaps);
     let cap = 8usize;
     let ssd = 4usize;
     let loc = 4usize;
-    let src = 5usize;
     let vend = 6usize;
-    let model = 8usize;
-    let tail = vend + model + cap + ssd + loc + src;
+    let model = 16usize;
+    let tail = vend + model + cap + ssd + loc;
     let dev = budget.saturating_sub(tail).max(8);
-    (dev, vend, model, cap, ssd, loc, src)
+    (dev, vend, model, cap, ssd, loc)
 }
 
 fn format_disk_table(rows: &[HostDiskRow], total_width: usize) -> Vec<Line<'static>> {
     if rows.is_empty() {
         return vec![Line::from("(no disks)")];
     }
-    let (w_d, w_v, w_m, w_cap, w_ssd, w_loc, w_src) = disk_col_widths(total_width.max(80));
+    let (w_d, w_v, w_m, w_cap, w_ssd, w_loc) = disk_col_widths(total_width.max(80));
     let hdr = {
         let g = " ".repeat(TABLE_COL_GAP);
         [
@@ -858,7 +849,6 @@ fn format_disk_table(rows: &[HostDiskRow], total_width: usize) -> Vec<Line<'stat
             fit_cell("Capacity", w_cap),
             fit_cell("SSD", w_ssd),
             fit_cell("Loc", w_loc),
-            fit_cell("Src", w_src),
         ]
         .join(&g)
     };
@@ -870,7 +860,6 @@ fn format_disk_table(rows: &[HostDiskRow], total_width: usize) -> Vec<Line<'stat
             .unwrap_or_else(|| "-".to_string());
         let ssd = r.ssd.map(|b| if b { "yes" } else { "no" }).unwrap_or("-");
         let loc = r.local.map(|b| if b { "yes" } else { "no" }).unwrap_or("-");
-        let src = format_disk_source(r.source);
         let g = " ".repeat(TABLE_COL_GAP);
         let row = [
             fit_cell(&truncate(&r.device_name, w_d), w_d),
@@ -879,7 +868,6 @@ fn format_disk_table(rows: &[HostDiskRow], total_width: usize) -> Vec<Line<'stat
             fit_cell(&cap, w_cap),
             fit_cell(ssd, w_ssd),
             fit_cell(loc, w_loc),
-            fit_cell(src, w_src),
         ]
         .join(&g);
         out.push(Line::from(vec![table_val(row)]));
@@ -972,8 +960,7 @@ fn format_vm_table(rows: &[HostVmRow], total_width: usize) -> Vec<Line<'static>>
 mod tests {
     use super::*;
     use crate::host_summary::{
-        HostDiskRow, HostDiskSource, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary,
-        HostVmRow,
+        HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow,
     };
     use insta::assert_snapshot;
     use ratatui::Terminal;
@@ -1100,7 +1087,6 @@ mod tests {
             capacity_bytes: Some(500_000_000_000),
             ssd: Some(true),
             local: Some(true),
-            source: HostDiskSource::Scsi,
         });
         s.memory_tiers.push(HostMemoryTierRow {
             name: "Tier0".into(),

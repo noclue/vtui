@@ -60,23 +60,24 @@ Physical NIC row from `config.network.pnic`.
 
 ## HostDiskRow
 
-Unified disk row from SCSI LUNs and NVMe namespaces.
+Disk row built only from SCSI LUNs (`config.storage_device.scsi_lun` downcast to `HostScsiDisk`).
+ESXi reports local NVMe drives here as SCSI LUNs, so `nvme_topology` is intentionally not used (it
+would duplicate the same physical disk; see research.md).
 
 **Fields**:
 
-- `device_name: String`: SCSI device name or NVMe controller/namespace label.
-- `vendor: Option<String>`: disk or controller vendor.
-- `model: Option<String>`: disk or controller model.
+- `device_name: String`: SCSI device name (`HostDevice.device_name`).
+- `vendor: Option<String>`: disk vendor.
+- `model: Option<String>`: disk model.
 - `capacity_bytes: Option<u64>`: capacity from block count and block size.
-- `ssd: Option<bool>`: SSD flag; NVMe defaults to `Some(true)`.
-- `local: Option<bool>`: local disk flag; NVMe defaults to `Some(true)` unless better data exists.
-- `source: HostDiskSource`: `Scsi` or `Nvme`.
+- `ssd: Option<bool>`: SSD flag.
+- `local: Option<bool>`: local disk flag.
 
 **Validation and state rules**:
 
 - Include only SCSI LUN rows that downcast to `HostScsiDisk`.
 - Capacity multiplication must be checked or saturating to avoid panic on unexpected values.
-- Sort stable by source and device name unless implementation finds a better existing table convention.
+- Sort stable by device name unless implementation finds a better existing table convention.
 
 ## HostMemoryTierRow
 

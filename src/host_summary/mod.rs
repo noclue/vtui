@@ -56,12 +56,10 @@ pub struct HostPnicRow {
     pub wake_on_lan_supported: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum HostDiskSource {
-    Scsi,
-    Nvme,
-}
-
+/// Host disk display row.
+///
+/// Sourced only from `config.storage_device.scsi_lun` (`HostScsiDisk`). ESXi reports local NVMe
+/// drives here as SCSI LUNs, so `nvme_topology` is intentionally not used (it would duplicate rows).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostDiskRow {
     pub device_name: String,
@@ -70,7 +68,6 @@ pub struct HostDiskRow {
     pub capacity_bytes: Option<u64>,
     pub ssd: Option<bool>,
     pub local: Option<bool>,
-    pub source: HostDiskSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
