@@ -264,6 +264,25 @@ fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
     }
 }
 
+pub fn render_error_popup(frame: &mut Frame, message: &str) {
+    let area = centered_rect(70, 14, frame.area());
+    let paragraph = Paragraph::new(message.to_string())
+        .block(
+            Block::default()
+                .title("Error")
+                .style(Style::default().bg(Color::Red))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title_bottom(Line::from("Esc or Enter dismiss")),
+        )
+        .wrap(Wrap { trim: true });
+    frame.render_widget(Clear, area);
+    frame.render_widget(paragraph, area);
+}
+
+pub fn error_popup_handle_key(key: &KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Esc | KeyCode::Enter)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,24 +304,4 @@ mod tests {
         assert_eq!(popup.width, 40);
         assert_eq!(popup.x, 20);
     }
-}
-
-pub fn render_error_popup(frame: &mut Frame, message: &str) {
-    let area = centered_rect(70, 14, frame.area());
-    let paragraph = Paragraph::new(message.to_string())
-        .block(
-            Block::default()
-                .title("Error")
-                .style(Style::default().bg(Color::Red))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title_bottom(Line::from("Esc or Enter dismiss")),
-        )
-        .wrap(Wrap { trim: true });
-    frame.render_widget(Clear, area);
-    frame.render_widget(paragraph, area);
-}
-
-pub fn error_popup_handle_key(key: &KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Esc | KeyCode::Enter)
 }
