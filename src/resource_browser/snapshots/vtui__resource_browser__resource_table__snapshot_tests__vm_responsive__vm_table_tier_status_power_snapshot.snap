@@ -1,0 +1,18 @@
+---
+source: src/resource_browser/resource_table.rs
+expression: "draw_vm_table(&mut mock, outer_width_for_columns_budget(30))"
+---
+"┌────Virtual Machines (all)[1]────┐"
+"│  S  P  Name                    █│"
+"│▶ ●  ●  production-database-repl█│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"│                                █│"
+"└ vTUI version: 0.2.6 ─↑↓ - scroll┘"

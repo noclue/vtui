@@ -13,5 +13,6 @@ mod resource_table;
 mod tabular_data;
 mod task;
 mod vm;
+mod vm_layout;
 pub use events::{EventBrowserPayload, event_to_browser_object};
 pub use resource_mgr::{HistoryRecord, ResourceManager};

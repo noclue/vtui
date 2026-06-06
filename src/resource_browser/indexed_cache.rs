@@ -1,5 +1,8 @@
 use crate::resource_browser::perf::PerfSnapshotShare;
-use crate::resource_browser::tabular_data::{InventoryRowBuilder, TableDataSource, TabularData};
+use crate::resource_browser::tabular_data::{
+    ColumnLayout, InventoryRowBuilder, TableDataSource, TabularData,
+};
+use crate::resource_browser::vm_layout::vm_column_layout;
 use crate::resource_type::ResourceType;
 use ratatui::layout::Constraint;
 use ratatui::widgets::Row;
@@ -162,6 +165,43 @@ where
     fn column_sizes(&self) -> Vec<Constraint> {
         T::column_sizes()
     }
+
+    fn column_layout(&self, columns_budget: u16) -> ColumnLayout {
+        if T::resource_type() == ResourceType::VirtualMachine {
+            vm_column_layout(columns_budget)
+        } else {
+            let header_len = T::header_row().len();
+            ColumnLayout {
+                visible_indices: (0..header_len).collect(),
+                constraints: T::column_sizes(),
+            }
+        }
+    }
+
+    fn iter_for_layout<'a>(
+        &'a mut self,
+        layout: &ColumnLayout,
+    ) -> Box<dyn Iterator<Item = Row<'static>> + 'a> {
+        self.ensure_indices_updated();
+        let Some(indices) = &self.indices else {
+            panic!("Internal error: No indices found after ensuring indices updated");
+        };
+
+        let perf_rows = self
+            .perf
+            .as_ref()
+            .and_then(|p| p.read().ok())
+            .map(|g| g.clone());
+
+        let cache = self.cache.clone();
+        let layout = layout.clone();
+        Box::new(indices.iter().map(move |idx| {
+            let cache = cache.read().expect("ObjectCache lock poisoned");
+            let item = &cache[*idx];
+            T::inventory_row_for_layout(item, perf_rows.as_ref(), &layout)
+        }))
+    }
+
     fn header_row(&self) -> Vec<&'static str> {
         T::header_row()
     }

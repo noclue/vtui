@@ -5,5 +5,5 @@ alwaysApply: true
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/001-esx-host-summary-view/plan.md`
+`specs/002-vm-responsive-columns/plan.md`
 <!-- SPECKIT END -->

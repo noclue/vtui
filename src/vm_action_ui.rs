@@ -249,8 +249,13 @@ impl VmActionUi {
 }
 
 fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
-    let popup_width = (r.width * percent_x / 100).max(40);
-    let popup_height = height.min(r.height.saturating_sub(2)).max(5);
+    let popup_width = (r.width * percent_x / 100)
+        .max(40.min(r.width))
+        .min(r.width);
+    let popup_height = height
+        .min(r.height.saturating_sub(2))
+        .max(5.min(r.height))
+        .min(r.height);
     Rect {
         x: r.x + (r.width.saturating_sub(popup_width)) / 2,
         y: r.y + (r.height.saturating_sub(popup_height)) / 2,
@@ -277,4 +282,26 @@ pub fn render_error_popup(frame: &mut Frame, message: &str) {
 
 pub fn error_popup_handle_key(key: &KeyEvent) -> bool {
     matches!(key.code, KeyCode::Esc | KeyCode::Enter)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn centered_rect_clamps_to_narrow_terminal() {
+        let frame = Rect::new(0, 0, 38, 35);
+        let popup = centered_rect(52, 7, frame);
+        assert_eq!(popup.width, 38);
+        assert_eq!(popup.x, 0);
+        assert!(popup.x + popup.width <= frame.x + frame.width);
+        assert!(popup.y + popup.height <= frame.y + frame.height);
+    }
+
+    #[test]
+    fn centered_rect_respects_minimum_width_when_room_allows() {
+        let frame = Rect::new(0, 0, 80, 24);
+        let popup = centered_rect(50, 7, frame);
+        assert_eq!(popup.width, 40);
+        assert_eq!(popup.x, 20);
+    }
 }

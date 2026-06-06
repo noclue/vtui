@@ -1,0 +1,18 @@
+---
+source: src/resource_browser/resource_table.rs
+expression: "draw_vm_table(&mut mock, outer_width_for_columns_budget(120))"
+---
+"┌─────────────────────────────────────────────────Virtual Machines (all)[1]─────────────────────────────────────────────────┐"
+"│  ID           S  P  Name                                              OS              Used Space   CPU        Memory     █│"
+"│▶ vm-1001      ●  ●  production-database-replica-east                  Ubuntu Linux 64 120.5 GB     ▁▂▃  250MH ▁▂▃  4.0G  █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"│                                                                                                                          █│"
+"└ vTUI version: 0.2.6 ───────────────────────────────────────────────────────────────────────────────────────────↑↓ - scroll┘"
