@@ -1,7 +1,8 @@
 //! Host summary modal: loading, scrollable content, scrollbar.
 
 use crate::host_summary::{
-    HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow, LOG_TARGET,
+    HostDiskRow, HostGraphicsRow, HostMemoryTierRow, HostPnicRow, HostSummary, HostVmRow,
+    LOG_TARGET,
 };
 use crate::operation_types::OperationId;
 use crate::resource_browser::formatting::{
