@@ -1,4 +1,5 @@
 use crate::event::{AppEvent, Event};
+use crate::host_summary::fetch_host_summary;
 use crate::ops::types::{InventoryOperation, OperationRequest};
 use crate::vm_power_actions::{execute_vm_power_action, prefetch_vm_action_context};
 use crate::vm_summary::fetch_vm_summary;
@@ -65,6 +66,38 @@ pub async fn run_ops_supervisor(
                                 "ops: PrefetchVmSummary task failed request_id={request_id} vm={vm_label}: {e:#}"
                             );
                             AppEvent::VmSummaryFailed {
+                                request_id,
+                                error: format!("{e:#}"),
+                            }
+                        }
+                    };
+                    let _ = event_tx.send(Event::App(Box::new(ev)));
+                }
+                OperationRequest::PrefetchHostSummary { request_id, host } => {
+                    let host_label = format!("{}:{}", host.r#type.as_str(), host.value);
+                    debug!(
+                        target: "host_summary",
+                        "ops: PrefetchHostSummary task start request_id={request_id} host={host_label}"
+                    );
+                    let res = fetch_host_summary(client, host).await;
+                    let ev = match res {
+                        Ok(summary) => {
+                            debug!(
+                                target: "host_summary",
+                                "ops: PrefetchHostSummary task ok request_id={request_id} host={host_label} name={}",
+                                summary.host_name
+                            );
+                            AppEvent::HostSummarySucceeded {
+                                request_id,
+                                summary,
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                target: "host_summary",
+                                "ops: PrefetchHostSummary task failed request_id={request_id} host={host_label}: {e:#}"
+                            );
+                            AppEvent::HostSummaryFailed {
                                 request_id,
                                 error: format!("{e:#}"),
                             }

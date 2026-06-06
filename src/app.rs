@@ -2,6 +2,7 @@ use crate::body_pane::BodyPane;
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
+use crate::host_summary_ui::{HostSummaryKeyOutcome, HostSummaryUi};
 use crate::operation_types::OperationId;
 use crate::ops::types::{InventoryOperation, OperationRequest};
 use crate::ops::{OpsHandle, spawn_ops_supervisor};
@@ -55,6 +56,8 @@ pub struct App {
     vm_action_ui: VmActionUi,
     /// VM summary popup (`s` from VM grid).
     vm_summary_ui: VmSummaryUi,
+    /// Host summary popup (`s` from Host grid).
+    host_summary_ui: HostSummaryUi,
     /// Outstanding VM power action submitted to [`crate::ops`] (modal already closed).
     vm_action_pending_execute: Option<OperationId>,
     /// Monotonic id generator for ops requests.
@@ -171,6 +174,7 @@ impl App {
             history: HistoryManager::new(20), // TODO: Make this configurable
             vm_action_ui: VmActionUi::default(),
             vm_summary_ui: VmSummaryUi::default(),
+            host_summary_ui: HostSummaryUi::default(),
             vm_action_pending_execute: None,
             next_operation_id: 1,
             ops,
@@ -193,7 +197,7 @@ impl App {
 
         let want_perf = polling_policy::perf_polling_wanted(
             matches!(self.body_pane, BodyPane::ResourceBrowser(_)),
-            self.vm_summary_ui.is_active(),
+            self.vm_summary_ui.is_active() || self.host_summary_ui.is_active(),
         );
         let next_perf_demand = if want_perf {
             if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
@@ -361,6 +365,7 @@ impl App {
                 self.pending_redraw = true;
             }
             AppEvent::OpenVmSummary(vm_ref) => {
+                self.host_summary_ui.close();
                 let request_id = self.next_op_id();
                 let vm_label = format!("{}:{}", vm_ref.r#type.as_str(), vm_ref.value);
                 info!(
@@ -380,6 +385,31 @@ impl App {
                     self.vm_summary_ui.close();
                     self.error_popup =
                         Some("Could not queue VM summary fetch (ops worker unavailable).".into());
+                }
+                self.refresh_polling_demand();
+                self.pending_redraw = true;
+            }
+            AppEvent::OpenHostSummary(host_ref) => {
+                self.vm_summary_ui.close();
+                let request_id = self.next_op_id();
+                let host_label = format!("{}:{}", host_ref.r#type.as_str(), host_ref.value);
+                info!(
+                    target: "host_summary",
+                    "host summary: open (queue fetch) request_id={request_id} host={host_label}"
+                );
+                self.host_summary_ui.start_loading(request_id);
+                let req = OperationRequest::PrefetchHostSummary {
+                    request_id,
+                    host: host_ref,
+                };
+                if self.submit_op(req).await.is_err() {
+                    warn!(
+                        target: "host_summary",
+                        "host summary: could not queue fetch request_id={request_id} host={host_label} (ops worker unavailable)"
+                    );
+                    self.host_summary_ui.close();
+                    self.error_popup =
+                        Some("Could not queue host summary fetch (ops worker unavailable).".into());
                 }
                 self.refresh_polling_demand();
                 self.pending_redraw = true;
@@ -409,6 +439,35 @@ impl App {
                     debug!(
                         target: "vm_summary",
                         "vm summary: ignoring VmSummaryFailed (stale request_id={request_id}): {error}"
+                    );
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::HostSummarySucceeded {
+                request_id,
+                summary,
+            } => {
+                if self.host_summary_ui.pending_matches(request_id) {
+                    self.host_summary_ui.apply_success(request_id, summary);
+                } else {
+                    debug!(
+                        target: "host_summary",
+                        "host summary: ignoring HostSummarySucceeded (stale request_id={} name={})",
+                        request_id,
+                        summary.host_name
+                    );
+                }
+                self.pending_redraw = true;
+            }
+            AppEvent::HostSummaryFailed { request_id, error } => {
+                if self.host_summary_ui.pending_matches(request_id) {
+                    self.host_summary_ui.close();
+                    self.error_popup = Some(error);
+                    self.refresh_polling_demand();
+                } else {
+                    debug!(
+                        target: "host_summary",
+                        "host summary: ignoring HostSummaryFailed (stale request_id={request_id}): {error}"
                     );
                 }
                 self.pending_redraw = true;
@@ -521,6 +580,9 @@ impl App {
         if self.vm_summary_ui.is_active() {
             self.vm_summary_ui.render(frame);
         }
+        if self.host_summary_ui.is_active() {
+            self.host_summary_ui.render(frame);
+        }
         if let Some(ref msg) = self.error_popup {
             vm_action_ui::render_error_popup(frame, msg);
         }
@@ -577,6 +639,21 @@ impl App {
                     self.pending_redraw = true;
                 }
                 return Ok(());
+            }
+
+            if self.host_summary_ui.is_active() {
+                match self.host_summary_ui.handle_key(key) {
+                    HostSummaryKeyOutcome::Ignored => {}
+                    HostSummaryKeyOutcome::Consumed => {
+                        self.pending_redraw = true;
+                        return Ok(());
+                    }
+                    HostSummaryKeyOutcome::Close => {
+                        self.pending_redraw = true;
+                        self.refresh_polling_demand();
+                        return Ok(());
+                    }
+                }
             }
 
             if self.vm_summary_ui.is_active() {

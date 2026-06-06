@@ -13,6 +13,8 @@ mod config;
 mod event;
 mod hints;
 mod history;
+mod host_summary;
+mod host_summary_ui;
 mod inventory_path;
 mod logging;
 mod operation_types;
@@ -93,9 +95,15 @@ async fn init_vim_client(cfg: &config::ResolvedConfig) -> Result<VimClientHandle
         "soap" => TransportMode::Soap,
         _ => return Err(anyhow::anyhow!("Invalid protocol: {}", cfg.protocol)),
     };
+    let mut http_builder = reqwest::Client::builder().cookie_store(true);
+    if cfg.insecure {
+        http_builder = http_builder
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true);
+    }
+    let http_client = http_builder.build()?;
 
-    let client = ClientBuilder::new(cfg.server.as_str())
-        .insecure(cfg.insecure)
+    let client = ClientBuilder::new(cfg.server.as_str(), http_client)
         .basic_authn(cfg.username.as_str(), cfg.password.as_str())
         .app_details(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
         .transport(transport)

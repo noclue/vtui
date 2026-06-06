@@ -93,6 +93,36 @@ pub fn format_compact_mem_bytes(bytes: i128) -> String {
 }
 
 /// Sparkline (▁–▇) from raw `query_perf` integer samples. Values are vSphere **hundredths of a
+/// Suitable after converting e.g. Mb/s → bps (`mbps * 1_000_000`).
+pub fn format_compact_bitrate_bps(bps: u64) -> String {
+    if bps == 0 {
+        return "   0".to_string();
+    }
+    const K: u64 = 1_000;
+    const M: u64 = K * 1_000;
+    const G: u64 = M * 1_000;
+    const T: u64 = G * 1_000;
+    const P: u64 = T * 1_000;
+
+    let (div, unit) = if bps >= P {
+        (P as f64, 'P')
+    } else if bps >= T {
+        (T as f64, 'T')
+    } else if bps >= G {
+        (G as f64, 'G')
+    } else if bps >= M {
+        (M as f64, 'M')
+    } else if bps >= K {
+        (K as f64, 'K')
+    } else {
+        let n = (bps.min(999)) as i64;
+        return format!("{:>3} ", n);
+    };
+    let s = bps as f64 / div;
+    format_compact_scaled(s, unit)
+}
+
+/// Sparkline (▁–▇) from raw `query_perf` integer samples. Values are vSphere **hundredths of a
 /// percent** (0 = 0%, 10000 = 100%). Uses **absolute** 0–10000 scaling so the bars reflect real
 /// utilization against total capacity.
 ///
@@ -144,4 +174,29 @@ pub fn format_byte_size(bytes: i64) -> Cell<'static> {
     };
 
     Cell::from(format!("{:.2} {}", size, unit))
+}
+
+#[cfg(test)]
+mod compact_format_tests {
+    use super::{format_compact_bitrate_bps, format_compact_mem_bytes, format_compact_mhz};
+
+    fn assert_four(label: &str, s: &str) {
+        assert_eq!(
+            s.chars().count(),
+            4,
+            "{label}: expected 4 chars, got {:?} len {}",
+            s,
+            s.chars().count()
+        );
+    }
+
+    #[test]
+    fn compact_columns_are_four_chars() {
+        assert_four("mhz", &format_compact_mhz(428));
+        assert_four("mhz_zero", &format_compact_mhz(0));
+        assert_four("mem", &format_compact_mem_bytes(1024));
+        assert_four("bps", &format_compact_bitrate_bps(1_000_000_000));
+        assert_four("bps_small", &format_compact_bitrate_bps(500));
+        assert_four("bps_100m", &format_compact_bitrate_bps(100 * 1_000_000));
+    }
 }

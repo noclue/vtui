@@ -351,6 +351,16 @@ impl ResourceManager {
                     events.send(AppEvent::OpenVmSummary(vm_ref));
                 }
             }
+            KeyCode::Char('s') if self.resource_type() == ResourceType::Host => {
+                if let Some((host_ref, _)) = self.selected_item() {
+                    let label = format!("{}:{}", host_ref.r#type.as_str(), host_ref.value);
+                    debug!(
+                        target: "host_summary",
+                        "host summary: key 's' open host={label}"
+                    );
+                    events.send(AppEvent::OpenHostSummary(host_ref));
+                }
+            }
             KeyCode::Char('x') if self.resource_type() == ResourceType::VirtualMachine => {
                 if let Some((vm_ref, _)) = self.selected_item() {
                     events.send(AppEvent::OpenVmActions(vm_ref));

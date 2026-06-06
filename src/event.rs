@@ -1,3 +1,4 @@
+use crate::host_summary::HostSummary;
 use crate::operation_types::OperationId;
 use crate::prop_browser::PropertyHistoryRecord;
 use crate::resource_browser::EventBrowserPayload;
@@ -87,6 +88,18 @@ pub enum AppEvent {
     },
     /// VM summary fetch failed (`request_id` matches UI submission).
     VmSummaryFailed {
+        request_id: OperationId,
+        error: String,
+    },
+    /// Open host summary popup (async fetch via ops).
+    OpenHostSummary(ManagedObjectReference),
+    /// Host summary fetch succeeded (`request_id` matches UI submission).
+    HostSummarySucceeded {
+        request_id: OperationId,
+        summary: HostSummary,
+    },
+    /// Host summary fetch failed (`request_id` matches UI submission).
+    HostSummaryFailed {
         request_id: OperationId,
         error: String,
     },
