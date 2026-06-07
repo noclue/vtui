@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-06-07
+
+### Added
+
+- **Host Summary** (`s` on the **Host** inventory table): opens a scrollable popup with the same interaction model as VM summary—**Esc** / **q** to close; **↑**/**↓**, **j**/**k**, Page Up/Down, **Home**/**End**, **g**/**G**, and **Ctrl+B**/**Ctrl+F** to scroll. While open you briefly see **Loading host summary…**; vSphere work runs in the background so the rest of the UI stays responsive. The header shows name, vendor/model, CPU and RAM totals, overall status, connection and power state (with uptime when applicable), and current CPU and memory usage. **Physical NICs** list device, driver, MAC, link speed, and PCI details when available. **Disks** list SCSI LUNs (including NVMe volumes presented as SCSI) with device, vendor, model, capacity, SSD, and local indicators—without duplicating the same drive from `nvme_topology`. Optional **memory tiering** and **graphics** sections appear only when the API returns data. A **Resident VMs** table (up to 300 rows, with a total count when truncated) reuses familiar VM columns: ID, status, power, name, guest OS, used space, CPU, and memory. Perf polling pauses while either VM or Host summary is open.
+- **Responsive VM table columns:** the Virtual Machine resource browser adapts to terminal width. **Name** always stays visible (minimum 20 character cells; it absorbs leftover width at full size). As width grows, columns appear in order: **Status** and **Power** together (before ID), then **ID**, **Guest OS**, **Used Space**, **Memory**, and finally **CPU** (sparkline + capacity). At full layout the VM **ID** column is six characters narrower than before (12 cells). Sorting, filtering, and selection continue to work when columns are hidden; search still matches ID and OS even when those columns are not shown.
+
+### Changed
+
+- **`vim_rs` 0.5:** bumped from 0.4.x. `ClientBuilder` now uses an explicit `reqwest` client so cookie handling and `insecure` TLS options stay under vTUI’s control.
+- **Third-party dependencies:** upgraded direct deps (`tokio` 1.52, `indexmap` 2.14, `thiserror` 2.0.18, `toml` 1.x) and refreshed `Cargo.lock` for transitive updates including `ratatui`, `chrono`, and `reqwest`.
+
+### Fixed
+
+- **Summary and action popups on very narrow terminals:** VM summary, Host summary, and VM action dialogs no longer panic when the frame is narrower than the previous 20-column minimum; popup width and height clamp to the available area instead of writing past the buffer edge.
+
 ## [0.2.6] - 2026-04-18
 
 ### Fixed

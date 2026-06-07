@@ -18,18 +18,26 @@ brew install noclue/tap/vtui
 winget install noclue.vtui
 ```
 
+### Chocolatey
+
+```powershell
+choco install vtui
+```
+
+See the [Chocolatey package page](https://community.chocolatey.org/packages/vtui) for details.
+
 ### Command line
 
 macOS and Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.6/vtui-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.7/vtui-installer.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.6/vtui-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.7/vtui-installer.ps1 | iex"
 ```
 
 ## Supported Platforms
@@ -47,10 +55,11 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releas
 - Drill into child collections with shortcuts: `v` VMs, `h` Hosts, `n` Networks, `d` Datastores, `t` Tasks, `e` Events (where shown in the footer)
 - **Events** (`e`): live recent-events table; **Enter** opens a read-only JSON tree for the selected event payload (not a managed-object property view). History and **Backspace** work across resource, live property, and static event-detail panes.
 - **VM and Host tables**: CPU and memory **sparklines** (PerformanceManager samples), refreshed about every 20 seconds and when the visible set changes (e.g. search)
+- **Responsive VM table**: the Virtual Machine list keeps the **Name** column visible in narrow terminals (split panes, SSH jump hosts); Status, Power, ID, OS, and metric columns appear progressively as width grows
 - Connection/about line shows **API version** and transport (**JSON** or **SOAP**)
 - **VM power actions** (`x` on the Virtual Machine list): open a menu of power operations gated by the server’s `disabledMethod` list. Inventory path is resolved (govmomi-style) before the menu opens. All actions except **Power On / Start** require a confirmation showing VM name, path, and action. The UI only **starts** each operation (no task-wait or success banner); the live grid reflects state, and `t` still opens tasks for the selected VM. API failures show an error dialog (dismiss with `Esc` or `Enter`).
 - **VM Summary** (`s` on the Virtual Machine list): opens a scrollable popup with a single-screen overview—IPs, status, power and uptime, OS, CPU and memory, VMware Tools, host, disk usage, and per-NIC and per-disk detail (see **VM Summary** under Usage). The footer shows `s summary` when a VM row is selected. Fetching runs in the background so the rest of the UI keeps working while data loads.
-- **Host Summary** (`s` on the Host list): same modal pattern as VM summary—hardware and quick stats, physical NICs, SCSI and NVMe disks, optional memory tiering and graphics sections, and a capped table of resident VMs (up to 300 rows with a total count when truncated). Perf polling pauses while either VM or Host summary is open.
+- **Host Summary** (`s` on the Host list): same modal pattern as VM summary—hardware and quick stats, physical NICs, disks, optional memory tiering and graphics sections, and a capped table of resident VMs (up to 300 rows with a total count when truncated). See **Host Summary** under Usage. Perf polling pauses while either VM or Host summary is open.
 - Inspect raw vSphere properties for any object
 - Export object properties to a timestamped JSON file with `j`
 - Navigate backward through browsing history with `Backspace`
@@ -270,6 +279,14 @@ vtui --list       # show profile names
 From the **Virtual Machine** table (after navigating with `v` from a parent, or switching resource type with `r`), select a VM and press `**s`**. vTUI requests summary data from vCenter or ESXi in the background; you may see a short loading message, then a popup titled **VM summary** with the VM’s display name.
 
 The top section is a compact header: VM name and id, IP address(es), overall status and power (with uptime when the guest is running), guest OS, vCPU count, current CPU usage in MHz, VMware Tools status line, memory in use versus configured size, which **host** the VM runs on, and total **disk** usage where the API provides it. Below that, **Networking** lists each virtual NIC with a friendly label, the **network** name when vTUI can derive it from the virtual device backing (standard switch, distributed port group, NSX opaque network, or SR-IOV), MAC address, and IP addresses reported by VMware Tools when the guest is up. **Disks** lists virtual disks with backing information and datastore names when available.
+
+Close the popup with `**Esc`** or `**q**`. While it is open, other keys are ignored except scrolling: `**↑**` `**↓**`, `**j**` `**k**`, **Page Up** / **Page Down**, **Home** / **End**, `**g`** (top) / `**G**` (bottom), and **Ctrl+B** / **Ctrl+F** (page up/down). If the server cannot return summary data, an error dialog appears; dismiss it with `**Esc`** or `**Enter**` (same as other error popups).
+
+### Host Summary
+
+From the **Host** table (after navigating with `h` from a parent, or switching resource type with `r`), select a host and press `**s`**. vTUI requests summary data from vCenter or ESXi in the background; you may see a short loading message, then a popup titled **Host summary** with the host’s display name.
+
+The top section is a compact header: host name, vendor and model, CPU and RAM totals, overall status, connection and power state (with uptime when applicable), and current CPU and memory usage. **Physical NICs** lists each adapter with device, driver, MAC, link speed, and PCI details when available. **Disks** lists storage devices with device, vendor, model, capacity, and SSD/local indicators where the API provides them. Optional **memory tiering** and **graphics** sections appear only when data is available. **Resident VMs** shows a table of VMs on the host (up to 300 rows, with a total count when the host has more).
 
 Close the popup with `**Esc`** or `**q**`. While it is open, other keys are ignored except scrolling: `**↑**` `**↓**`, `**j**` `**k**`, **Page Up** / **Page Down**, **Home** / **End**, `**g`** (top) / `**G**` (bottom), and **Ctrl+B** / **Ctrl+F** (page up/down). If the server cannot return summary data, an error dialog appears; dismiss it with `**Esc`** or `**Enter**` (same as other error popups).
 
