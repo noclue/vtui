@@ -290,7 +290,7 @@ The top section is a compact header: host name, vendor and model, CPU and RAM to
 
 Close the popup with `**Esc`** or `**q**`. While it is open, other keys are ignored except scrolling: `**↑**` `**↓**`, `**j**` `**k**`, **Page Up** / **Page Down**, **Home** / **End**, `**g`** (top) / `**G**` (bottom), and **Ctrl+B** / **Ctrl+F** (page up/down). If the server cannot return summary data, an error dialog appears; dismiss it with `**Esc`** or `**Enter**` (same as other error popups).
 
-To build and run from source, ensure Rust `1.85` or newer is installed and run:
+To build and run from source, ensure Rust `1.88` or newer is installed and run:
 
 ```bash
 cargo run --bin vtui
