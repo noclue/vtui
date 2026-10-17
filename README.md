@@ -4,6 +4,8 @@ vTUI is a terminal UI for browsing VMware vSphere inventory from vCenter and sta
 It uses `vim_rs` and the vSphere PropertyCollector API to render live inventory data in a Ratatui
 interface.
 
+![vTUI browsing a vSphere inventory](https://github.com/noclue/vtui/releases/download/v0.2.7/vtui.gif)
+
 ## Install
 
 ### Homebrew
