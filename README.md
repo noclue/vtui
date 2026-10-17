@@ -33,13 +33,13 @@ See the [Chocolatey package page](https://community.chocolatey.org/packages/vtui
 macOS and Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.7/vtui-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.8/vtui-installer.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.7/vtui-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.8/vtui-installer.ps1 | iex"
 ```
 
 ## Supported Platforms
