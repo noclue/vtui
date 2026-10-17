@@ -1,6 +1,6 @@
 [package]
 name = "vtui"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 # uuid 1.28.0 requires Rust 1.89
 rust-version = "1.89"
