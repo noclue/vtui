@@ -1,5 +1,9 @@
 # vTUI: VMware vSphere inventory in the terminal
 
+[![Built With Ratatui](https://ratatui.rs/built-with-ratatui/badge.svg)](https://ratatui.rs/)
+[![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-f74c00?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Release](https://img.shields.io/github/v/release/noclue/vtui)](https://github.com/noclue/vtui/releases)
+
 vTUI is a terminal UI for browsing VMware vSphere inventory from vCenter and standalone ESXi hosts.
 It uses `vim_rs` and the vSphere PropertyCollector API to render live inventory data in a Ratatui
 interface.
