@@ -83,8 +83,12 @@ async fn main() -> Result<()> {
         .run(terminal)
         .await;
     ratatui::restore();
-    cache_manager.borrow_mut().destroy().await?;
+    let destroy_result = cache_manager.borrow_mut().destroy().await;
+    if let Err(err) = client.close().await {
+        log::warn!("vSphere session logout failed: {err}");
+    }
     log_handle.shutdown();
+    destroy_result?;
     app_result
 }
 

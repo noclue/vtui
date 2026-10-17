@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`vim_rs` 0.6.1:** bumped from 0.5 (vSphere API 9.1). Event filters leave the new `auditable` / `audit_id` fields unset, and transit-gateway events show up in the event table’s object column. Shutdown calls `Client::close` so the session logs out without relying on destructor logout.
+- **Third-party dependencies:** refreshed `Cargo.lock` to the newest releases allowed by the manifest (`ratatui` 0.30.2, `tokio` 1.53, `reqwest` 0.13.5, `flexi_logger` 0.31.10, and the rest of the tree). Source builds now need Rust 1.88.
+
 ## [0.2.7] - 2026-06-07
 
 ### Added

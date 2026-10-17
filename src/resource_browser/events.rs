@@ -204,6 +204,9 @@ pub fn decode_main_object(event: &Event) -> DecodedMainObject {
     if let Some(ref dvs) = event.dvs {
         return entity_arg("DVS", &dvs.name, &dvs.dvs);
     }
+    if let Some(ref tgw) = event.tgw {
+        return entity_arg("TGW", &tgw.name, &tgw.tgw);
+    }
     DecodedMainObject {
         type_label: "-".to_string(),
         id: "-".to_string(),
@@ -591,6 +594,8 @@ fn base_event_filter(entity: Option<EventFilterSpecByEntity>) -> EventFilterSpec
         event_type_id: None,
         max_count: Some(EVENT_PAGE_SIZE),
         delayed_init: Some(false),
+        auditable: None,
+        audit_id: None,
     }
 }
 
@@ -695,7 +700,7 @@ mod tests {
     use vim_rs::types::enums::MoTypesEnum;
     use vim_rs::types::struct_enum::StructType;
     use vim_rs::types::structs::{
-        EntityEventArgument, Event, ManagedObjectReference, VmEventArgument,
+        EntityEventArgument, Event, ManagedObjectReference, TgwEventArgument, VmEventArgument,
     };
 
     fn base_event() -> Event {
@@ -711,8 +716,10 @@ mod tests {
             ds: None,
             net: None,
             dvs: None,
+            tgw: None,
             full_formatted_message: None,
             change_tag: None,
+            audit_id: None,
             type_: None,
             extra_fields_: HashMap::new(),
         }
@@ -828,6 +835,24 @@ mod tests {
         assert_eq!(d.type_label, "VM");
         assert_eq!(d.id, "vm-1");
         assert_eq!(d.name.as_deref(), Some("folder/vm-1"));
+    }
+
+    #[test]
+    fn decode_main_object_tgw_argument() {
+        let mut e = base_event();
+        e.tgw = Some(TgwEventArgument {
+            entity_event_argument_: EntityEventArgument {
+                name: "tgw-edge".into(),
+            },
+            tgw: ManagedObjectReference {
+                r#type: MoTypesEnum::TransitGateway,
+                value: "tgw-1".into(),
+            },
+        });
+        let d = decode_main_object(&e);
+        assert_eq!(d.type_label, "TGW");
+        assert_eq!(d.id, "tgw-1");
+        assert_eq!(d.name.as_deref(), Some("tgw-edge"));
     }
 
     #[test]
