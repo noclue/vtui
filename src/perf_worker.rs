@@ -70,7 +70,7 @@ pub async fn run_perf_worker(
             match PerfPollerState::new(client.clone()) {
                 Ok(p) => poller = Some(p),
                 Err(e) => {
-                    log::warn!("perf worker: PerformanceManager init failed: {e:#}");
+                    log::warn!("perf worker: PerfClient init failed: {e:#}");
                     continue;
                 }
             }
