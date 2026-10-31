@@ -1,4 +1,4 @@
-use crate::body_pane::BodyPane;
+use crate::body_pane::{BodyPane, PaneAction};
 use crate::event::{AppEvent, Event, EventHandler};
 use crate::hints;
 use crate::history::{History, HistoryManager};
@@ -6,6 +6,7 @@ use crate::host_summary_ui::{HostSummaryKeyOutcome, HostSummaryUi};
 use crate::operation_types::OperationId;
 use crate::ops::types::{InventoryOperation, OperationRequest};
 use crate::ops::{OpsHandle, spawn_ops_supervisor};
+use crate::perf_overview::{PerfOverview, kind_label, new_overview_store};
 use crate::perf_worker::{PerfRequest, run_perf_worker};
 use crate::polling_policy;
 use crate::prop_browser::{
@@ -76,6 +77,16 @@ pub struct App {
     perf_tx: watch::Sender<PerfRequest>,
     /// Last perf demand sent to the worker; used to skip redundant ad-hoc refreshes.
     last_perf_demand: Option<PerfDemandState>,
+    /// Session-only. `z` hides the five-row header. `back()` does not change this.
+    header_hidden: bool,
+}
+
+pub(crate) fn header_constraint_len(hidden: bool) -> u16 {
+    if hidden { 0 } else { 5 }
+}
+
+pub(crate) fn header_toggle_applies(search_active: bool) -> bool {
+    !search_active
 }
 
 const ASCII_ART: &str = r#"     ╭───────╮
@@ -89,10 +100,15 @@ enum PerfDemandState {
     Paused {
         generation: u64,
     },
-    Active {
+    Table {
         generation: u64,
         entities: Vec<ManagedObjectReference>,
         snapshot: PerfSnapshotShare,
+    },
+    Overview {
+        generation: u64,
+        entity: ManagedObjectReference,
+        store: crate::perf_overview::PerfOverviewShare,
     },
 }
 
@@ -101,11 +117,26 @@ impl PerfDemandState {
         Self::Paused { generation }
     }
 
-    fn active(req: &PerfRequest) -> Self {
-        Self::Active {
-            generation: req.generation,
-            entities: req.entities.clone(),
-            snapshot: req.snapshot.clone(),
+    fn from_request(req: &PerfRequest) -> Self {
+        match req {
+            PerfRequest::Table {
+                generation,
+                entities,
+                snapshot,
+            } => Self::Table {
+                generation: *generation,
+                entities: entities.clone(),
+                snapshot: snapshot.clone(),
+            },
+            PerfRequest::Overview {
+                generation,
+                entity,
+                store,
+            } => Self::Overview {
+                generation: *generation,
+                entity: entity.clone(),
+                store: store.clone(),
+            },
         }
     }
 
@@ -120,12 +151,12 @@ impl PerfDemandState {
                 },
             ) => left_generation == right_generation,
             (
-                Self::Active {
+                Self::Table {
                     generation: left_generation,
                     entities: left_entities,
                     snapshot: left_snapshot,
                 },
-                Self::Active {
+                Self::Table {
                     generation: right_generation,
                     entities: right_entities,
                     snapshot: right_snapshot,
@@ -134,6 +165,22 @@ impl PerfDemandState {
                 left_generation == right_generation
                     && left_entities == right_entities
                     && Arc::ptr_eq(left_snapshot, right_snapshot)
+            }
+            (
+                Self::Overview {
+                    generation: left_generation,
+                    entity: left_entity,
+                    store: left_store,
+                },
+                Self::Overview {
+                    generation: right_generation,
+                    entity: right_entity,
+                    store: right_store,
+                },
+            ) => {
+                left_generation == right_generation
+                    && left_entity == right_entity
+                    && Arc::ptr_eq(left_store, right_store)
             }
             _ => false,
         }
@@ -185,6 +232,7 @@ impl App {
             perf_worker,
             perf_tx,
             last_perf_demand: None,
+            header_hidden: false,
         };
         app.refresh_polling_demand();
         Ok(app)
@@ -195,39 +243,61 @@ impl App {
         let pc = self.body_pane.wants_property_collector_waits();
         self.events.set_property_collector_demand(pc);
 
-        let want_perf = polling_policy::perf_polling_wanted(
+        let mode = polling_policy::perf_poll_mode(
             matches!(self.body_pane, BodyPane::ResourceBrowser(_)),
             self.vm_summary_ui.is_active() || self.host_summary_ui.is_active(),
+            matches!(self.body_pane, BodyPane::PerfOverview(_)),
         );
-        let next_perf_demand = if want_perf {
-            if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
-                let req = resource_mgr.perf_request(self.perf_generation);
-                let next = PerfDemandState::active(&req);
-                let unchanged = self
-                    .last_perf_demand
-                    .as_ref()
-                    .is_some_and(|prev| prev.matches(&next));
-                if !unchanged {
-                    let _ = self.perf_tx.send_replace(req);
+        let next_perf_demand = match mode {
+            polling_policy::PerfPollMode::Table => {
+                if let BodyPane::ResourceBrowser(ref mut resource_mgr) = self.body_pane {
+                    let req = resource_mgr.perf_request(self.perf_generation);
+                    self.publish_perf(req)
+                } else {
+                    self.publish_paused()
                 }
-                next
-            } else {
-                PerfDemandState::paused(self.perf_generation)
             }
-        } else {
-            let next = PerfDemandState::paused(self.perf_generation);
-            let unchanged = self
-                .last_perf_demand
-                .as_ref()
-                .is_some_and(|prev| prev.matches(&next));
-            if !unchanged {
-                let _ = self
-                    .perf_tx
-                    .send_replace(PerfRequest::paused(self.perf_generation));
+            polling_policy::PerfPollMode::Overview => {
+                if let BodyPane::PerfOverview(overview) = &self.body_pane {
+                    let req = PerfRequest::Overview {
+                        entity: overview.moref.clone(),
+                        generation: self.perf_generation,
+                        store: overview.store.clone(),
+                    };
+                    self.publish_perf(req)
+                } else {
+                    self.publish_paused()
+                }
             }
-            next
+            polling_policy::PerfPollMode::Off => self.publish_paused(),
         };
         self.last_perf_demand = Some(next_perf_demand);
+    }
+
+    fn publish_perf(&mut self, req: PerfRequest) -> PerfDemandState {
+        let next = PerfDemandState::from_request(&req);
+        let unchanged = self
+            .last_perf_demand
+            .as_ref()
+            .is_some_and(|prev| prev.matches(&next));
+        if !unchanged {
+            let _ = self.perf_tx.send_replace(req);
+        }
+        next
+    }
+
+    fn publish_paused(&mut self) -> PerfDemandState {
+        let next = PerfDemandState::paused(self.perf_generation);
+        let unchanged = self
+            .last_perf_demand
+            .as_ref()
+            .is_some_and(|prev| prev.matches(&next));
+        if !unchanged {
+            let _ = self
+                .perf_tx
+                .send_replace(PerfRequest::paused(self.perf_generation));
+        }
+        next
     }
 
     fn next_op_id(&mut self) -> OperationId {
@@ -310,25 +380,14 @@ impl App {
                     }
                     BodyPane::PropertyBrowser(prop_mgr) => {
                         prop_mgr.save_state(&mut self.events);
-                        let res_mgr = ResourceManager::new(
-                            self.client.clone(),
-                            self.cache_mgr.clone(),
-                            resource_type,
-                        )
-                        .await?;
-                        self.perf_generation = self.perf_generation.saturating_add(1);
-                        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
+                        self.replace_with_resource_browser(resource_type).await?;
                     }
                     BodyPane::StaticPropertyBrowser(static_mgr) => {
                         static_mgr.save_state(&mut self.events);
-                        let res_mgr = ResourceManager::new(
-                            self.client.clone(),
-                            self.cache_mgr.clone(),
-                            resource_type,
-                        )
-                        .await?;
-                        self.perf_generation = self.perf_generation.saturating_add(1);
-                        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
+                        self.replace_with_resource_browser(resource_type).await?;
+                    }
+                    BodyPane::PerfOverview(_) => {
+                        self.replace_with_resource_browser(resource_type).await?;
                     }
                 }
                 self.refresh_polling_demand();
@@ -517,6 +576,18 @@ impl App {
                     self.pending_redraw = true;
                 }
             }
+            AppEvent::OpenPerfOverview { moref, name } => {
+                self.perf_generation = self.perf_generation.saturating_add(1);
+                let store = new_overview_store(name, kind_label(&moref));
+                self.body_pane = BodyPane::PerfOverview(PerfOverview::new(moref, store));
+                self.refresh_polling_demand();
+                self.pending_redraw = true;
+            }
+            AppEvent::PerfOverviewResult { generation } => {
+                if generation == self.perf_generation {
+                    self.pending_redraw = true;
+                }
+            }
         }
         Ok(())
     }
@@ -560,7 +631,10 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = Layout::vertical([Constraint::Length(5), Constraint::Fill(1)]);
+        let vertical = Layout::vertical([
+            Constraint::Length(header_constraint_len(self.header_hidden)),
+            Constraint::Fill(1),
+        ]);
         let [top_area, body_area] = vertical.areas(frame.area());
 
         self.render_header(frame, top_area);
@@ -630,6 +704,14 @@ impl App {
             if matches!(key.code, KeyCode::Char('c') if key.modifiers == crossterm::event::KeyModifiers::CONTROL)
             {
                 self.events.send(AppEvent::Quit);
+                return Ok(());
+            }
+
+            if matches!(key.code, KeyCode::Char('z'))
+                && header_toggle_applies(self.search_state.is_active())
+            {
+                self.header_hidden = !self.header_hidden;
+                self.pending_redraw = true;
                 return Ok(());
             }
 
@@ -711,6 +793,10 @@ impl App {
             }
 
             let key_outcome = self.body_pane.handle_key(key, &mut self.events).await?;
+            if key_outcome.action == Some(PaneAction::Back) {
+                self.back().await?;
+                return Ok(());
+            }
             if key_outcome.new_perf_view {
                 self.perf_generation = self.perf_generation.saturating_add(1);
             }
@@ -729,6 +815,18 @@ impl App {
         Ok(())
     }
 
+    async fn replace_with_resource_browser(
+        &mut self,
+        resource_type: ResourceType,
+    ) -> anyhow::Result<()> {
+        let res_mgr =
+            ResourceManager::new(self.client.clone(), self.cache_mgr.clone(), resource_type)
+                .await?;
+        self.perf_generation = self.perf_generation.saturating_add(1);
+        self.body_pane = BodyPane::ResourceBrowser(Box::new(res_mgr));
+        Ok(())
+    }
+
     async fn back(&mut self) -> anyhow::Result<()> {
         if let Some(entry) = self.history.pop() {
             match entry {
@@ -737,7 +835,9 @@ impl App {
                         resource_mgr.load_history_record(record).await?;
                         self.perf_generation = self.perf_generation.saturating_add(1);
                     }
-                    BodyPane::PropertyBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
+                    BodyPane::PropertyBrowser(_)
+                    | BodyPane::StaticPropertyBrowser(_)
+                    | BodyPane::PerfOverview(_) => {
                         self.perf_generation = self.perf_generation.saturating_add(1);
                         self.body_pane = BodyPane::ResourceBrowser(Box::new(
                             ResourceManager::from_history_record(
@@ -751,7 +851,9 @@ impl App {
                 },
                 History::Property(record) => match record {
                     PropertyHistoryRecord::Managed { obj, state } => match &mut self.body_pane {
-                        BodyPane::ResourceBrowser(_) | BodyPane::StaticPropertyBrowser(_) => {
+                        BodyPane::ResourceBrowser(_)
+                        | BodyPane::StaticPropertyBrowser(_)
+                        | BodyPane::PerfOverview(_) => {
                             self.body_pane = BodyPane::PropertyBrowser(
                                 PropertyBrowserManager::from_history_record(
                                     PropertyHistoryRecord::Managed { obj, state },
@@ -771,7 +873,9 @@ impl App {
                         root,
                         state,
                     } => match &mut self.body_pane {
-                        BodyPane::ResourceBrowser(_) | BodyPane::PropertyBrowser(_) => {
+                        BodyPane::ResourceBrowser(_)
+                        | BodyPane::PropertyBrowser(_)
+                        | BodyPane::PerfOverview(_) => {
                             self.body_pane = BodyPane::StaticPropertyBrowser(
                                 StaticPropertyBrowserManager::from_history(metadata, root, state)?,
                             );
@@ -806,17 +910,17 @@ mod tests {
     #[test]
     fn perf_demand_matches_only_when_generation_entities_and_snapshot_match() {
         let shared_snapshot = new_perf_snapshot_share();
-        let same = PerfDemandState::active(&PerfRequest {
+        let same = PerfDemandState::from_request(&PerfRequest::Table {
             generation: 7,
             entities: vec![vm("vm-1"), vm("vm-2")],
             snapshot: shared_snapshot.clone(),
         });
-        let same_again = PerfDemandState::active(&PerfRequest {
+        let same_again = PerfDemandState::from_request(&PerfRequest::Table {
             generation: 7,
             entities: vec![vm("vm-1"), vm("vm-2")],
             snapshot: shared_snapshot,
         });
-        let different_entities = PerfDemandState::active(&PerfRequest {
+        let different_entities = PerfDemandState::from_request(&PerfRequest::Table {
             generation: 7,
             entities: vec![vm("vm-1")],
             snapshot: new_perf_snapshot_share(),
@@ -831,7 +935,7 @@ mod tests {
         let paused = PerfDemandState::paused(3);
         let same_paused = PerfDemandState::paused(3);
         let different_generation = PerfDemandState::paused(4);
-        let active = PerfDemandState::active(&PerfRequest {
+        let active = PerfDemandState::from_request(&PerfRequest::Table {
             generation: 3,
             entities: vec![vm("vm-1")],
             snapshot: new_perf_snapshot_share(),
@@ -840,5 +944,25 @@ mod tests {
         assert!(paused.matches(&same_paused));
         assert!(!paused.matches(&different_generation));
         assert!(!paused.matches(&active));
+    }
+
+    #[test]
+    fn header_height_follows_visibility_and_search_blocks_the_toggle() {
+        assert_eq!(super::header_constraint_len(false), 5);
+        assert_eq!(super::header_constraint_len(true), 0);
+        assert!(super::header_toggle_applies(false));
+        assert!(!super::header_toggle_applies(true));
+    }
+
+    #[test]
+    fn back_does_not_assign_header_hidden() {
+        let source = include_str!("app.rs");
+        let start = source.find("async fn back(").expect("back");
+        let body = &source[start..];
+        let end = body.find("\n}\n").expect("end of impl");
+        assert!(
+            !body[..end].contains("header_hidden"),
+            "back() must leave the header flag alone"
+        );
     }
 }

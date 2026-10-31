@@ -65,8 +65,19 @@ pub enum AppEvent {
     ResourceManagerHistory(ResourceHistoryRecord),
     PropertyManagerHistory(PropertyHistoryRecord),
 
-    /// Background perf worker completed a poll cycle for `generation`.
+    /// Background perf worker completed a table poll cycle for `generation`.
     PerfResult {
+        generation: u64,
+    },
+
+    /// Open the performance overview for one host or virtual machine.
+    OpenPerfOverview {
+        moref: ManagedObjectReference,
+        name: String,
+    },
+
+    /// Background perf worker finished an overview poll for `generation`.
+    PerfOverviewResult {
         generation: u64,
     },
 

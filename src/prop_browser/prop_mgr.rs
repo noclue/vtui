@@ -153,7 +153,16 @@ impl StaticPropertyBrowserManager {
     }
 
     pub fn get_hints(&self) -> (&'static [&'static str], &'static [&'static str]) {
-        (&[], &["q quit", "r resource", "j dump json", "Enter open"])
+        (
+            &[],
+            &[
+                "q quit",
+                "r resource",
+                "j dump json",
+                "Enter open",
+                "z header",
+            ],
+        )
     }
 }
 
@@ -336,7 +345,16 @@ impl PropertyBrowserManager {
         Ok(true)
     }
     pub fn get_hints(&self) -> (&'static [&'static str], &'static [&'static str]) {
-        (&[], &["q quit", "r resource", "j dump json", "Enter open"])
+        (
+            &[],
+            &[
+                "q quit",
+                "r resource",
+                "j dump json",
+                "Enter open",
+                "z header",
+            ],
+        )
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
@@ -428,5 +446,27 @@ impl Drop for PropertyBrowserManager {
                     });
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    #[test]
+    fn both_property_browsers_keep_open_hints_and_add_header() {
+        let source = include_str!("prop_mgr.rs");
+        let implementation = source.split("mod hint_tests").next().unwrap_or(source);
+        for line in [
+            "q quit",
+            "r resource",
+            "j dump json",
+            "Enter open",
+            "z header",
+        ] {
+            assert_eq!(
+                implementation.matches(line).count(),
+                2,
+                "{line} should appear in both property browsers"
+            );
+        }
     }
 }

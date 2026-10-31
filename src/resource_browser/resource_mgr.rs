@@ -245,7 +245,7 @@ impl ResourceManager {
         } else {
             vec![]
         };
-        PerfRequest {
+        PerfRequest::Table {
             generation,
             entities,
             snapshot: self.perf_snapshot.clone(),
@@ -365,6 +365,21 @@ impl ResourceManager {
                 if let Some((vm_ref, _)) = self.selected_item() {
                     events.send(AppEvent::OpenVmActions(vm_ref));
                 }
+            }
+            KeyCode::Char('p')
+                if matches!(
+                    self.resource_type(),
+                    ResourceType::VirtualMachine | ResourceType::Host
+                ) =>
+            {
+                if let Some((moref, name)) = self.selected_item() {
+                    self.save_state(events);
+                    events.send(AppEvent::OpenPerfOverview { moref, name });
+                }
+                return Ok(ResourceBrowserKeyResult {
+                    handled: true,
+                    new_perf_view: false,
+                });
             }
             KeyCode::Char('/') => events.send(AppEvent::OpenSearch),
             KeyCode::Esc => self.set_filter(None),

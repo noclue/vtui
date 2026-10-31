@@ -19,6 +19,7 @@ mod inventory_path;
 mod logging;
 mod operation_types;
 mod ops;
+mod perf_overview;
 mod perf_worker;
 mod polling_policy;
 mod prop_browser;

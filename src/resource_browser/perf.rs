@@ -18,6 +18,8 @@ use vim_rs::perf::error::EntityStatus;
 use vim_rs::perf::metrics::{cpu, mem};
 use vim_rs::perf::result::EntitySeries;
 use vim_rs::perf::{Interval, PerfClient, PreparedQuery};
+
+use crate::perf_overview::{PerfOverviewShare, apply_fetch, prepare_overview};
 use vim_rs::types::structs::ManagedObjectReference;
 
 /// Number of sparkline slots displayed per entity.
@@ -143,6 +145,7 @@ pub fn new_perf_snapshot_share() -> PerfSnapshotShare {
 /// Lazily initialized `vim_rs::perf` client plus a reusable prepared query.
 pub struct PerfPollerState {
     prepared: PreparedQuery,
+    overview: PreparedQuery,
 }
 
 impl PerfPollerState {
@@ -157,7 +160,25 @@ impl PerfPollerState {
             .interval(Interval::Realtime)
             .latest(SLOTS as i32)
             .build();
-        Ok(Self { prepared })
+        let overview = prepare_overview(&perf);
+        Ok(Self { prepared, overview })
+    }
+
+    pub async fn poll_overview(
+        &mut self,
+        entity: &ManagedObjectReference,
+        store: &PerfOverviewShare,
+    ) -> anyhow::Result<()> {
+        let result = self
+            .overview
+            .fetch(std::slice::from_ref(entity))
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let mut guard = store
+            .write()
+            .map_err(|err| anyhow::anyhow!("perf overview lock poisoned: {err}"))?;
+        apply_fetch(&mut guard, entity, result.entities());
+        Ok(())
     }
 
     /// Fetch the last [`SLOTS`] CPU/mem % samples plus latest absolute usage per entity.
@@ -305,5 +326,53 @@ mod tests {
         assert_eq!(*row, sample_spark());
         assert_eq!(snap.latest_cpu_mhz(&key), Some(428));
         assert_eq!(snap.latest_mem_bytes(&key), Some(1_073_741_824));
+    }
+
+    #[test]
+    fn table_query_stays_four_cpu_memory_counters_and_six_samples() {
+        assert_eq!(SLOTS, 6);
+        let source = include_str!("perf.rs");
+        let builder = source.split("mod tests").next().unwrap_or(source);
+        assert!(builder.contains(".metric(cpu::USAGE_AVERAGE)"));
+        assert!(builder.contains(".metric(mem::USAGE_AVERAGE)"));
+        assert!(builder.contains(".metric(cpu::USAGEMHZ_AVERAGE)"));
+        assert!(builder.contains(".metric(mem::CONSUMED_AVERAGE)"));
+        assert!(builder.contains(".latest(SLOTS as i32)"));
+        assert!(!builder.contains("virtualDisk"));
+        let keys = [
+            format!(
+                "{}.{}.{}",
+                cpu::USAGE_AVERAGE.group,
+                cpu::USAGE_AVERAGE.name,
+                cpu::USAGE_AVERAGE.rollup.as_str()
+            ),
+            format!(
+                "{}.{}.{}",
+                mem::USAGE_AVERAGE.group,
+                mem::USAGE_AVERAGE.name,
+                mem::USAGE_AVERAGE.rollup.as_str()
+            ),
+            format!(
+                "{}.{}.{}",
+                cpu::USAGEMHZ_AVERAGE.group,
+                cpu::USAGEMHZ_AVERAGE.name,
+                cpu::USAGEMHZ_AVERAGE.rollup.as_str()
+            ),
+            format!(
+                "{}.{}.{}",
+                mem::CONSUMED_AVERAGE.group,
+                mem::CONSUMED_AVERAGE.name,
+                mem::CONSUMED_AVERAGE.rollup.as_str()
+            ),
+        ];
+        assert_eq!(
+            keys,
+            [
+                "cpu.usage.average",
+                "mem.usage.average",
+                "cpu.usagemhz.average",
+                "mem.consumed.average",
+            ]
+        );
     }
 }
