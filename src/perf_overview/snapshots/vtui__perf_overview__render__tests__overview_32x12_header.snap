@@ -1,0 +1,16 @@
+---
+source: src/perf_overview/render.rs
+expression: "render_terminal(32, 12, true)"
+---
+"header                          "
+"                                "
+"                                "
+"                                "
+"                                "
+"CPU 32% 480MHz                  "
+"MEM 1.4GiB 35%                  "
+"NET ↓3.2 ↑0.4MiB/s              "
+"DISK R1.2 W0.3MiB/s             "
+"                                "
+"                                "
+"▂▂▂▂▂▂▃▃▃▃▃▄▄▄▄▄▅▅▅▅▅▅▆▆▆▆▆▇▇▇▇▇"

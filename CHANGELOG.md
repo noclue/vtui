@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-10-31
+
+### Added
+
+- **Performance overview** (`p` on a Virtual Machine or Host row): replaces the inventory with a full-body realtime view of that one object. CPU, consumed memory, network throughput, and disk throughput cover about the last 30 minutes at a 20-second sample. A wide terminal shows four charts; shorter and narrower ones step down through a chart plus badges to four badge lines and a sparkline for the focused domain. Tab, Shift-Tab, and `1`–`4` move focus (CPU, memory, network, disk). Esc or Backspace returns to the same inventory row. `q` still quits. A gap breaks the line. A failed refresh keeps the last graphs and shows `ERR` in the title. The inventory sparklines pause while the overview is open.
+- **Hide the application header** with `z` from any view except an active search. The choice lasts for the session, including after leaving the overview, and gives those five rows to the current view.
+
+### Changed
+
+- **`vim_rs` 0.7.0:** the crate now comes from crates.io instead of a path checkout. Performance queries use `vim_rs::perf` (Cargo feature `perf`). Bindings stay on vSphere API 9.1. Shutdown still calls `Client::close`.
+- **Third-party dependencies:** refreshed `Cargo.lock` to the newest releases allowed by the manifest and Rust 1.89, including `tokio` 1.54.1.
+
+### Security
+
+- **`rustls-webpki` 0.103.16** rejects certificate paths that use the distrusted emSign intermediates (RUSTSEC-2026-0382).
+- **`webpki-root-certs` 1.0.11** drops those emSign roots (RUSTSEC-2026-0383, RUSTSEC-2026-0381).
+- `cargo audit` reports no remaining advisories.
+
 ## [0.2.8] - 2026-10-17
 
 ### Changed

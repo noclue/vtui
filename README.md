@@ -37,13 +37,13 @@ See the [Chocolatey package page](https://community.chocolatey.org/packages/vtui
 macOS and Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.8/vtui-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/noclue/vtui/releases/download/v0.2.9/vtui-installer.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.8/vtui-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releases/download/v0.2.9/vtui-installer.ps1 | iex"
 ```
 
 ## Supported Platforms
@@ -61,6 +61,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/noclue/vtui/releas
 - Drill into child collections with shortcuts: `v` VMs, `h` Hosts, `n` Networks, `d` Datastores, `t` Tasks, `e` Events (where shown in the footer)
 - **Events** (`e`): live recent-events table; **Enter** opens a read-only JSON tree for the selected event payload (not a managed-object property view). History and **Backspace** work across resource, live property, and static event-detail panes.
 - **VM and Host tables**: CPU and memory **sparklines** (PerformanceManager samples), refreshed about every 20 seconds and when the visible set changes (e.g. search)
+- **Performance overview** (`p` on a Virtual Machine or Host row): a full-body realtime view of CPU, memory, network, and disk for that object over about the last 30 minutes. See **Performance overview** under Usage. Press `z` to hide the five-row application header for the rest of the session (except while a search filter is being typed)
 - **Responsive VM table**: the Virtual Machine list keeps the **Name** column visible in narrow terminals (split panes, SSH jump hosts); Status, Power, ID, OS, and metric columns appear progressively as width grows
 - Connection/about line shows **API version** and transport (**JSON** or **SOAP**)
 - **VM power actions** (`x` on the Virtual Machine list): open a menu of power operations gated by the server’s `disabledMethod` list. Inventory path is resolved (govmomi-style) before the menu opens. All actions except **Power On / Start** require a confirmation showing VM name, path, and action. The UI only **starts** each operation (no task-wait or success banner); the live grid reflects state, and `t` still opens tasks for the selected VM. API failures show an error dialog (dismiss with `Esc` or `Enter`).
@@ -280,6 +281,16 @@ vtui prod         # profile [environments.prod] from config
 vtui --list       # show profile names
 ```
 
+### Performance overview
+
+From the **Virtual Machine** or **Host** table, select a row and press `p`. The inventory is replaced by a realtime view of that object: CPU, consumed memory, network throughput, and disk throughput for about the last 30 minutes, sampled about every 20 seconds. The title names the object and shows the time of the newest sample. On a wide terminal each resource is a chart. As the terminal gets shorter or narrower, charts become badges and a sparkline for the focused resource, and a very short terminal shares one clipped line.
+
+Tab and Shift-Tab move focus among the four resources. `1` CPU, `2` memory, `3` network, and `4` disk jump straight there. The focused resource gets the largest slot. Esc or Backspace returns to the same inventory row. `q` quits the application. `r`, `s`, and `/` do nothing while the overview is open.
+
+`z` hides or shows the application header. The choice lasts for the session, including after you leave the overview, so a short side monitor can give those rows to the charts. While a search filter is being typed, `z` goes into the filter instead.
+
+A missing sample breaks the line. If a refresh fails, the last graphs stay and the title shows `ERR` with a short message. The small CPU and memory sparklines on the inventory table pause while the overview is open and resume when you go back.
+
 ### VM Summary
 
 From the **Virtual Machine** table (after navigating with `v` from a parent, or switching resource type with `r`), select a VM and press `**s`**. vTUI requests summary data from vCenter or ESXi in the background; you may see a short loading message, then a popup titled **VM summary** with the VM’s display name.
@@ -296,7 +307,7 @@ The top section is a compact header: host name, vendor and model, CPU and RAM to
 
 Close the popup with `**Esc`** or `**q**`. While it is open, other keys are ignored except scrolling: `**↑**` `**↓**`, `**j**` `**k**`, **Page Up** / **Page Down**, **Home** / **End**, `**g`** (top) / `**G**` (bottom), and **Ctrl+B** / **Ctrl+F** (page up/down). If the server cannot return summary data, an error dialog appears; dismiss it with `**Esc`** or `**Enter**` (same as other error popups).
 
-To build and run from source, ensure Rust `1.88` or newer is installed and run:
+To build and run from source, ensure Rust `1.89` or newer is installed and run:
 
 ```bash
 cargo run --bin vtui

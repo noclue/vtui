@@ -4,7 +4,7 @@ pub(crate) const HELP_HINTS: &[&str] = &[
     "q quit",
     "/ search",
     "r resource",
-    "0..9 sort",
+    "z header",
     "Enter props",
 ];
 
@@ -12,7 +12,7 @@ pub(crate) const HELP_HINTS_EVENTS: &[&str] = &[
     "q quit",
     "/ search",
     "r resource",
-    "0..9 sort",
+    "z header",
     "Enter details",
 ];
 
@@ -24,6 +24,7 @@ const EXPAND_TASK: &str = "t task";
 const EXPAND_EVENT: &str = "e events";
 const VM_ACTIONS: &str = "x actions";
 const SHOW_SUMMARY: &str = "s summary";
+const SHOW_PERF: &str = "p perf";
 
 const CLUSTER_EXPAND_HINTS: &[&str] = &[
     EXPAND_NETWORK,
@@ -36,14 +37,19 @@ const HOST_EXPAND_HINTS: &[&str] = &[
     EXPAND_NETWORK,
     EXPAND_DATASTORE,
     SHOW_SUMMARY,
+    SHOW_PERF,
     EXPAND_VM,
-    EXPAND_TASK,
-    EXPAND_EVENT,
 ];
 const DATASTORE_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK, EXPAND_EVENT];
 const NETWORK_EXPAND_HINTS: &[&str] = &[EXPAND_HOST, EXPAND_VM, EXPAND_TASK];
 
-const VM_EXPAND_HINTS: &[&str] = &[SHOW_SUMMARY, VM_ACTIONS, EXPAND_TASK, EXPAND_EVENT];
+const VM_EXPAND_HINTS: &[&str] = &[
+    SHOW_SUMMARY,
+    VM_ACTIONS,
+    SHOW_PERF,
+    EXPAND_TASK,
+    EXPAND_EVENT,
+];
 pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static str] {
     match resource_type {
         ResourceType::Cluster => CLUSTER_EXPAND_HINTS,
@@ -59,6 +65,42 @@ pub(crate) fn get_expand_hint(resource_type: ResourceType) -> &'static [&'static
 mod tests {
     use super::*;
     use crate::resource_type::ResourceType;
+
+    #[test]
+    fn vm_and_host_expand_hints_list_perf() {
+        assert_eq!(
+            get_expand_hint(ResourceType::VirtualMachine),
+            &["s summary", "x actions", "p perf", "t task", "e events",][..]
+        );
+        assert_eq!(
+            get_expand_hint(ResourceType::Host),
+            &["n network", "d datastore", "s summary", "p perf", "v vm",][..]
+        );
+    }
+
+    #[test]
+    fn help_hints_show_header_toggle_and_drop_sort() {
+        assert_eq!(
+            HELP_HINTS,
+            &[
+                "q quit",
+                "/ search",
+                "r resource",
+                "z header",
+                "Enter props",
+            ][..]
+        );
+        assert_eq!(
+            HELP_HINTS_EVENTS,
+            &[
+                "q quit",
+                "/ search",
+                "r resource",
+                "z header",
+                "Enter details",
+            ][..]
+        );
+    }
 
     #[test]
     fn host_expand_hints_include_vm_summary_key() {

@@ -1,4 +1,5 @@
 use crate::event::EventHandler;
+use crate::perf_overview::PerfOverview;
 use crate::prop_browser::{PropertyBrowserManager, StaticPropertyBrowserManager};
 use crate::resource_browser::ResourceManager;
 use crossterm::event::KeyEvent;
@@ -11,13 +12,21 @@ pub(crate) enum BodyPane {
     ResourceBrowser(Box<ResourceManager>),
     PropertyBrowser(PropertyBrowserManager),
     StaticPropertyBrowser(StaticPropertyBrowserManager),
+    PerfOverview(PerfOverview),
+}
+
+/// What the app should do after a pane consumes a key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PaneAction {
+    Back,
 }
 
 /// Unified key handling result for [`BodyPane::handle_key`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BodyKeyResult {
     pub handled: bool,
     pub new_perf_view: bool,
+    pub action: Option<PaneAction>,
 }
 
 impl BodyPane {
@@ -40,6 +49,9 @@ impl BodyPane {
             BodyPane::StaticPropertyBrowser(static_browser) => {
                 static_browser.render(frame, body_area);
             }
+            BodyPane::PerfOverview(overview) => {
+                overview.render(frame, body_area);
+            }
         }
     }
 
@@ -54,6 +66,7 @@ impl BodyPane {
                 Ok(BodyKeyResult {
                     handled: r.handled,
                     new_perf_view: r.new_perf_view,
+                    action: None,
                 })
             }
             BodyPane::PropertyBrowser(property_browser) => {
@@ -61,6 +74,7 @@ impl BodyPane {
                 Ok(BodyKeyResult {
                     handled,
                     new_perf_view: false,
+                    action: None,
                 })
             }
             BodyPane::StaticPropertyBrowser(static_browser) => {
@@ -68,8 +82,10 @@ impl BodyPane {
                 Ok(BodyKeyResult {
                     handled,
                     new_perf_view: false,
+                    action: None,
                 })
             }
+            BodyPane::PerfOverview(overview) => Ok(overview.handle_key(key)),
         }
     }
     pub fn get_hints(&self) -> (&'static [&'static str], &'static [&'static str]) {
@@ -77,6 +93,7 @@ impl BodyPane {
             BodyPane::ResourceBrowser(resource_manager) => resource_manager.get_hints(),
             BodyPane::PropertyBrowser(property_browser) => property_browser.get_hints(),
             BodyPane::StaticPropertyBrowser(static_browser) => static_browser.get_hints(),
+            BodyPane::PerfOverview(_) => crate::perf_overview::hints(),
         }
     }
 }
