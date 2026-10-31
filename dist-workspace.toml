@@ -19,3 +19,8 @@ install-path = "CARGO_HOME"
 publish-jobs = ["homebrew"]
 # Whether to install an updater program
 install-updater = false
+
+# cargo-dist still defaults Apple Silicon to macos-14. That image is in
+# brownout and is retired on 2026-11-02. macos-15 is the arm64 successor.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
