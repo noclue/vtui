@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-11-25
+
+### Changed
+
+- **`flexi_logger` 0.32:** logging now runs on `jiff` instead of `chrono`. Log lines keep the same UTC timestamp format (`2026-11-25T13:14:15.678Z`).
+- **`chrono` replaced by `jiff` 1.0:** task and event times, task durations, the performance overview sample time, and property-dump file names now use `jiff`. What you see is unchanged: local `Nov 25 13:14:15` in the tables and `…_20261125T131415+0200.json` dump names. `chrono` is no longer a dependency.
+- **Rust 1.91:** source builds now need Rust 1.91 or newer, because `flexi_logger` 0.32 requires it.
+- **Third-party dependencies:** refreshed `Cargo.lock` to the newest releases allowed by the manifest, including `rustls-webpki` 0.103.17 and `webpki-root-certs` 1.0.12.
+- **Release builds:** Apple Silicon macOS binaries are built on the `macos-15` runner, because GitHub is retiring `macos-14`.
+
+### Added
+
+- **`deny.toml`:** `cargo deny check` vets dependencies for advisories, yanked crates, wildcard versions, non-crates.io sources, and licenses. Only permissive licenses compatible with Apache-2.0 are allowed.
+
 ## [0.2.9] - 2026-10-31
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "vtui"
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 # flexi_logger 0.32 requires Rust 1.91
 rust-version = "1.91"
