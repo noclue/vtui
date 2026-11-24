@@ -1,6 +1,5 @@
 ---
 source: src/resource_browser/resource_table.rs
-assertion_line: 331
 expression: "draw_table(&mut mock, &parent, &mut state, 80, 16)"
 ---
 "┌──────────────Mock VMs (filter: gamma)[1] - Cluster: lab-cluster──────────────┐"
@@ -18,4 +17,4 @@ expression: "draw_table(&mut mock, &parent, &mut state, 80, 16)"
 "│                                                                             █│"
 "│                                                                             █│"
 "│                                                                             █│"
-"└ vTUI version: 0.2.9 ─Esc - clear filter───────────────────────────↑↓ - scroll┘"
+"└ vTUI version: 0.2.10 ─Esc - clear filter──────────────────────────↑↓ - scroll┘"
