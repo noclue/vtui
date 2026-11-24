@@ -2,8 +2,8 @@
 name = "vtui"
 version = "0.2.9"
 edition = "2024"
-# uuid 1.29.0 requires Rust 1.89
-rust-version = "1.89"
+# flexi_logger 0.32 requires Rust 1.91
+rust-version = "1.91"
 description = "Terminal UI for browsing VMware vSphere inventory"
 license = "Apache-2.0"
 repository = "https://github.com/noclue/vtui"
@@ -21,11 +21,11 @@ tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "ti
 ratatui = {  version = "0.30" , features = ["crossterm"]}
 vim_rs = { version = "0.7.0", default-features = false, features = ["xml", "vcsim_compat", "perf"] }
 reqwest = { version = "0.13" }
-chrono = "0.4"
 tui-tree-widget = "0.24"
 miniserde = "0.1"
 log = "0.4"
-flexi_logger = { version = "0.31", features = ["compress"] }
+flexi_logger = { version = "0.32", features = ["compress"] }
+jiff = "1"
 indexmap = "2.14"
 thiserror = "2.0.21"
 dotenvy = "0.15"

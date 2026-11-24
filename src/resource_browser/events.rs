@@ -5,7 +5,7 @@ use crate::resource_browser::formatting::ID_COLUMN_WIDTH;
 use crate::resource_browser::tabular_data::TableDataSource;
 use crate::resource_type::ResourceType;
 use anyhow::Context;
-use chrono::{DateTime, Local};
+use jiff::{Timestamp, tz::TimeZone};
 use log::warn;
 use ratatui::layout::Constraint;
 use ratatui::widgets::{Cell, Row};
@@ -216,16 +216,16 @@ pub fn decode_main_object(event: &Event) -> DecodedMainObject {
 }
 
 fn format_event_time(created_time: &str) -> Cell<'static> {
-    let Ok(dt) = DateTime::parse_from_rfc3339(created_time) else {
+    let Ok(ts) = created_time.parse::<Timestamp>() else {
         return Cell::from(created_time.to_string());
     };
-    let local = dt.with_timezone(&Local);
-    Cell::from(local.format("%b %d %H:%M:%S").to_string())
+    let local = ts.to_zoned_datetime(TimeZone::system());
+    Cell::from(local.strftime("%b %d %H:%M:%S").to_string())
 }
 
 fn compare_event_time(a: &EventRow, b: &EventRow) -> Ordering {
-    let pa = DateTime::parse_from_rfc3339(&a.created_time).ok();
-    let pb = DateTime::parse_from_rfc3339(&b.created_time).ok();
+    let pa = a.created_time.parse::<Timestamp>().ok();
+    let pb = b.created_time.parse::<Timestamp>().ok();
     pa.cmp(&pb)
 }
 

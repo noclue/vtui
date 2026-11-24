@@ -2,7 +2,7 @@ use crate::resource_browser::formatting::ID_COLUMN_WIDTH;
 use crate::resource_browser::perf::PerfRowsSnapshot;
 use crate::resource_browser::tabular_data::{InventoryRowBuilder, SortFn, TabularData};
 use crate::resource_type::ResourceType;
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use jiff::{SignedDuration, Timestamp, tz::TimeZone};
 use ratatui::layout::Constraint;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -188,12 +188,14 @@ fn get_initiator(task: &TaskInfo) -> String {
 }
 
 fn format_datetime<'b>(datetime: &str) -> Cell<'b> {
-    let Ok(datetime) = DateTime::parse_from_rfc3339(datetime) else {
+    let Ok(datetime) = datetime.parse::<Timestamp>() else {
         return Cell::default();
     };
 
-    let local_datetime = datetime.with_timezone(&chrono::Local);
-    let formatted_datetime = local_datetime.format("%b %d %H:%M:%S").to_string();
+    let formatted_datetime = datetime
+        .to_zoned_datetime(TimeZone::system())
+        .strftime("%b %d %H:%M:%S")
+        .to_string();
     Cell::from(formatted_datetime)
 }
 
@@ -207,27 +209,24 @@ fn task_duration_cell<'c>(initiated: &str, completed: &Option<String>) -> Cell<'
     }
 }
 
-fn task_duration(initiated: &str, completed: &Option<String>) -> Option<TimeDelta> {
-    let Ok(initiated) = DateTime::parse_from_rfc3339(initiated) else {
+fn task_duration(initiated: &str, completed: &Option<String>) -> Option<SignedDuration> {
+    let Ok(initiated) = initiated.parse::<Timestamp>() else {
         return None;
     };
-    let completed = completed
-        .clone()
-        .map(|x| DateTime::parse_from_rfc3339(&x).ok())
-        .unwrap_or_else(|| {
-            // Return the now instant if completed is None
-            let now: DateTime<FixedOffset> = chrono::Utc::now().fixed_offset();
-            Some(now)
-        });
-    let completed = completed?;
-    Some(completed - initiated)
+    let completed = match completed {
+        Some(x) => x.parse::<Timestamp>().ok()?,
+        // Use the current instant if the task has not completed yet
+        None => Timestamp::now(),
+    };
+    Some(completed.duration_since(initiated))
 }
 
-fn format_timedelta(delta: chrono::TimeDelta) -> String {
-    let days = delta.num_days();
-    let hours = delta.num_hours() % 24;
-    let minutes = delta.num_minutes() % 60;
-    let seconds = delta.num_seconds() % 60;
+fn format_timedelta(delta: SignedDuration) -> String {
+    let total_secs = delta.as_secs();
+    let days = total_secs / 86_400;
+    let hours = (total_secs / 3_600) % 24;
+    let minutes = (total_secs / 60) % 60;
+    let seconds = total_secs % 60;
 
     if days > 0 {
         format!("{}d {}h", days, hours)

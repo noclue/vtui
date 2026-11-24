@@ -2,7 +2,6 @@
 
 use std::time::SystemTime;
 
-use chrono::{DateTime, Utc};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Style};
@@ -541,7 +540,9 @@ pub fn title_line(store: Option<&PerfOverviewStore>) -> String {
 }
 
 fn format_sample_time(time: SystemTime) -> String {
-    DateTime::<Utc>::from(time).format("%H:%M:%SZ").to_string()
+    jiff::Timestamp::try_from(time)
+        .map(|ts| ts.strftime("%H:%M:%SZ").to_string())
+        .unwrap_or_else(|_| "—".to_string())
 }
 
 pub fn badge_text(domain: Domain, store: Option<&PerfOverviewStore>) -> String {
