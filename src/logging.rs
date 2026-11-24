@@ -1,7 +1,6 @@
 //! Log directory resolution, `flexi_logger` setup, and app vs wire routing.
 
 use anyhow::Result;
-use chrono::SecondsFormat;
 use flexi_logger::writers::{FileLogWriter, LogWriter};
 use flexi_logger::{
     Age, Cleanup, Criterion, DeferredNow, FileSpec, FlexiLoggerError, FormatFunction,
@@ -86,14 +85,19 @@ pub fn cleanup_from_rotating(rot: &RotatingFileConfig) -> Cleanup {
     }
 }
 
+/// RFC 3339 UTC timestamp with millisecond precision and `Z` suffix, e.g. `2026-11-24T13:14:15.678Z`.
+const UTC_TS_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.3fZ";
+
+fn utc_timestamp(now: &mut DeferredNow) -> String {
+    now.now_utc_owned().strftime(UTC_TS_FORMAT).to_string()
+}
+
 fn vtui_utc_format(
     w: &mut dyn Write,
     now: &mut DeferredNow,
     record: &Record,
 ) -> std::io::Result<()> {
-    let ts = now
-        .now_utc_owned()
-        .to_rfc3339_opts(SecondsFormat::Millis, true);
+    let ts = utc_timestamp(now);
     // One line per record: flexi_logger appends `line_ending` after this; do not use `writeln!`
     // or every entry would be followed by a blank line.
     write!(
@@ -315,9 +319,7 @@ pub struct TestVecWriter {
 #[cfg(test)]
 impl LogWriter for TestVecWriter {
     fn write(&self, now: &mut DeferredNow, record: &Record) -> std::io::Result<()> {
-        let ts = now
-            .now_utc_owned()
-            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        let ts = utc_timestamp(now);
         let line = format!(
             "{} {} [{}] {}",
             ts,
@@ -411,6 +413,14 @@ mod tests {
             effective_app_level("a::b::c", LevelFilter::Info, &filters),
             LevelFilter::Trace
         );
+    }
+
+    #[test]
+    fn utc_timestamp_is_rfc3339_millis_z() {
+        let mut now = DeferredNow::new();
+        let ts = utc_timestamp(&mut now);
+        let re = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$").unwrap();
+        assert!(re.is_match(&ts), "unexpected timestamp format: {ts}");
     }
 
     #[test]

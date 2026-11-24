@@ -2,7 +2,6 @@ use super::json_to_tree::{get_type_name, property_to_tree_item};
 use super::prop_utils::to_json_value;
 use std::fs::File;
 
-use chrono::{Local, SecondsFormat};
 use indexmap::IndexMap;
 use log::{debug, info, warn};
 use miniserde::json::{Object, Value};
@@ -353,9 +352,14 @@ impl PropertyBrowserState {
         let type_id_part =
             type_id_part.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
 
-        let timestamp = Local::now()
-            .to_rfc3339_opts(SecondsFormat::Secs, true)
-            .replace([':', '-'], "");
+        // Local time with offset, e.g. `20261124T131415+0100` (`Z` when local is UTC).
+        let now = jiff::ZonedDateTime::now();
+        let offset = if now.offset().seconds() == 0 {
+            "Z"
+        } else {
+            "%z"
+        };
+        let timestamp = now.strftime(&format!("%Y%m%dT%H%M%S{offset}")).to_string();
 
         let mut filename = String::new();
         if !name_prefix.is_empty() {
