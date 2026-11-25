@@ -14,10 +14,12 @@ on:
 jobs:
   publish-winget:
     runs-on: windows-latest
-    # For automated runs: only proceed when the Release workflow succeeded.
+    # For automated runs: only proceed when the Release workflow succeeded on a
+    # tag push. Release also runs on pull requests (building, not publishing);
+    # those runs have a branch name, not a release tag, so skip them.
     # workflow_run is fired by GitHub infrastructure, not GITHUB_TOKEN, so it
     # is not suppressed the way a `release:` event would be.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     steps:
       - name: Submit to Microsoft Winget
         uses: vedantmgoyal9/winget-releaser@v2
