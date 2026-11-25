@@ -19,8 +19,14 @@ install-path = "CARGO_HOME"
 publish-jobs = ["homebrew"]
 # Whether to install an updater program
 install-updater = false
+# Build (but never publish) all release artifacts on pull requests, so a PR
+# catches toolchain/runner breakage before a tag is pushed.
+pr-run-mode = "upload"
 
 # cargo-dist still defaults Apple Silicon to macos-14. That image is in
 # brownout and is retired on 2026-11-02. macos-15 is the arm64 successor.
 [dist.github-custom-runners]
 aarch64-apple-darwin = "macos-15"
+# Build Windows ARM natively. dist's default is a cross-build in the
+# messense/cargo-xwin container, whose Rust lagged our MSRV (1.89 vs 1.91).
+aarch64-pc-windows-msvc = "windows-11-arm"

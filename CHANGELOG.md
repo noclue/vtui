@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`chrono` replaced by `jiff` 1.0:** task and event times, task durations, the performance overview sample time, and property-dump file names now use `jiff`. What you see is unchanged: local `Nov 25 13:14:15` in the tables and `…_20261125T131415+0200.json` dump names. `chrono` is no longer a dependency.
 - **Rust 1.91:** source builds now need Rust 1.91 or newer, because `flexi_logger` 0.32 requires it.
 - **Third-party dependencies:** refreshed `Cargo.lock` to the newest releases allowed by the manifest, including `rustls-webpki` 0.103.17 and `webpki-root-certs` 1.0.12.
-- **Release builds:** Apple Silicon macOS binaries are built on the `macos-15` runner, because GitHub is retiring `macos-14`.
+- **Release builds:** Apple Silicon macOS binaries are built on the `macos-15` runner, because GitHub is retiring `macos-14`. Windows ARM64 binaries are now built natively on the `windows-11-arm` runner instead of being cross-compiled in the `cargo-xwin` container.
 
 ### Added
 
